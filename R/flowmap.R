@@ -29,11 +29,12 @@
 #' @param clustering_auto Whether to auto-adjust clustering level. Default is TRUE.
 #' @param clustering_level Manual clustering zoom level (0-20). Only used if clustering_auto is FALSE.
 #' @param adaptive_scales_enabled Whether to use adaptive scaling. Default is TRUE.
-#' @param highlight_color Color for highlighting on hover. Default is "orange".
+#' @param highlight_color Color for highlighting on hover. Default is "#ff9b29".
 #' @param max_top_flows Maximum number of top flows to display. Default is 5000.
 #' @param opacity Overall opacity of the flowmap layer (0-1). Default is 1.0.
 #' @param clustering_method Clustering algorithm to use. Either "HCA" (Hierarchical Cluster Analysis) or "H3" (H3 hexagonal hierarchical spatial index). Default is "HCA".
 #' @param show_settings_menu Whether to display an interactive settings menu on the map for real-time customization. Useful for exploring different visual configurations. Default is FALSE.
+#' @param dim_basemap Whether to apply CSS filters to dim the basemap and make the flowmap stand out. In dark mode, applies grayscale, invert, and color adjustments with reduced opacity. In light mode, applies grayscale with reduced opacity. Matches the visual style of flowmap.gl examples. Default is FALSE.
 #' @param popup A column name from locations or flows to display in a popup on click.
 #' @param tooltip A column name from locations or flows to display in a tooltip on hover.
 #'
@@ -90,11 +91,12 @@ add_flowmap <- function(
   clustering_auto = TRUE,
   clustering_level = NULL,
   adaptive_scales_enabled = TRUE,
-  highlight_color = "orange",
+  highlight_color = "#ff9b29",
   max_top_flows = 5000,
   opacity = 1.0,
   clustering_method = "HCA",
   show_settings_menu = FALSE,
+  dim_basemap = FALSE,
   popup = NULL,
   tooltip = NULL
 ) {
@@ -265,6 +267,7 @@ add_flowmap <- function(
       maxTopFlowsDisplayNum = max_top_flows
     ),
     showSettingsMenu = show_settings_menu,
+    dimBasemap = dim_basemap,
     popup = popup,
     tooltip = tooltip
   )

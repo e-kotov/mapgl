@@ -744,10 +744,61 @@ HTMLWidgets.widget({
 
     return {
       renderValue: function (x) {
+        // 1. Inject global        // INJECT CSS FOR BLENDING
+        if (!document.getElementById('flowmap-css-fix')) {
+          const style = document.createElement('style');
+          style.id = 'flowmap-css-fix';
+          style.innerHTML = `
+            /* Ensure container doesn't isolate blending */
+            .flowmap-dark-mode, .flowmap-light-mode {
+              isolation: auto !important;
+            }
+            
+            /* Target the specifically tagged deck canvas */
+            .flowmap-dark-mode .flowmap-overlay-canvas {
+              mix-blend-mode: screen !important;
+            }
+            .flowmap-light-mode .flowmap-overlay-canvas {
+              mix-blend-mode: multiply !important;
+            }
+
+            /* Dimming for Dark Mode */
+            .flowmap-dark-mode.flowmap-dim-basemap .mapboxgl-canvas,
+            .flowmap-dark-mode.flowmap-dim-basemap .maplibregl-canvas {
+               filter: grayscale(0.1) invert(1) hue-rotate(-180deg) saturate(0.5) contrast(0.9) !important;
+               opacity: 0.3 !important;
+            }
+
+            /* Dimming for Light Mode */
+            .flowmap-light-mode.flowmap-dim-basemap .mapboxgl-canvas,
+            .flowmap-light-mode.flowmap-dim-basemap .maplibregl-canvas {
+               filter: grayscale(0.85) !important;
+               opacity: 0.5 !important;
+            }
+
+            /* Tooltip styling from flowmap.gl example */
+            .flowmap-tooltip {
+              position: absolute;
+              font-size: 10px;
+              border-radius: 5px;
+              background-color: rgba(150, 150, 150, 0.75);
+              padding: 1em;
+              color: white;
+              pointer-events: none;
+              z-index: 9999;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            }
+          `;
+          document.head.appendChild(style);
+        }
+
         if (typeof mapboxgl === "undefined") {
           console.error("Mapbox GL JS is not loaded.");
           return;
         }
+
+
 
         // Register PMTiles source type if available
         if (
@@ -1280,10 +1331,56 @@ HTMLWidgets.widget({
                     maxTopFlowsDisplayNum: settings.maxTopFlowsDisplayNum,
                     // Event handlers
                     onHover: (info) => {
-                      if (flowmapConfig.tooltip && info && info.object) {
-                        // TODO: Implement tooltip display
-                        console.log("Flowmap hover:", info.object);
+                      // Create or get tooltip element
+                      let tooltip = document.getElementById('flowmap-tooltip-' + flowmapConfig.id);
+
+                      if (!info || !info.object) {
+                        // Hide tooltip
+                        if (tooltip) {
+                          tooltip.style.display = 'none';
+                        }
+                        return;
                       }
+
+                      // Create tooltip if it doesn't exist
+                      if (!tooltip) {
+                        tooltip = document.createElement('div');
+                        tooltip.id = 'flowmap-tooltip-' + flowmapConfig.id;
+                        tooltip.className = 'flowmap-tooltip';
+                        document.body.appendChild(tooltip);
+                      }
+
+                      // Show and position tooltip
+                      tooltip.style.display = 'block';
+                      tooltip.style.left = info.x + 'px';
+                      tooltip.style.top = info.y + 'px';
+
+                      // Generate tooltip content based on object type
+                      const { PickingType } = FlowmapGL;
+                      let content = '';
+
+                      switch (info.object.type) {
+                        case PickingType.LOCATION:
+                          content = `
+                            <div><strong>${info.object.name || info.object.id}</strong></div>
+                            ${info.object.totals ? `
+                              <div>Incoming: ${info.object.totals.incomingCount || 0}</div>
+                              <div>Outgoing: ${info.object.totals.outgoingCount || 0}</div>
+                              <div>Internal: ${info.object.totals.internalCount || 0}</div>
+                            ` : ''}
+                          `;
+                          break;
+                        case PickingType.FLOW:
+                          content = `
+                            <div><strong>${info.object.origin.id} → ${info.object.dest.id}</strong></div>
+                            <div>Count: ${info.object.count}</div>
+                          `;
+                          break;
+                        default:
+                          content = '<div>Unknown</div>';
+                      }
+
+                      tooltip.innerHTML = content;
                     },
                     onClick: (info) => {
                       if (flowmapConfig.popup && info && info.object) {
@@ -1307,6 +1404,64 @@ HTMLWidgets.widget({
                   flowmapLayers.push(flowmapLayer);
                   console.log("Flowmap layer '" + flowmapConfig.id + "' created successfully");
 
+                  // Helper to update deck.gl canvas blending via CSS classes and direct tagging
+                  const updateDeckEffects = (darkMode, attempt = 1) => {
+                    const container = map.getContainer();
+
+                    // Toggle container classes for context
+                    if (darkMode) {
+                      container.classList.add('flowmap-dark-mode');
+                      container.classList.remove('flowmap-light-mode');
+                      container.style.backgroundColor = '#000';
+                    } else {
+                      container.classList.add('flowmap-light-mode');
+                      container.classList.remove('flowmap-dark-mode');
+                      container.style.backgroundColor = '#fff';
+                    }
+
+                    // Toggle dimming class
+                    if (flowmapConfig.dimBasemap) {
+                      container.classList.add('flowmap-dim-basemap');
+                    } else {
+                      container.classList.remove('flowmap-dim-basemap');
+                    }
+
+                    // Find and tag the deck canvas
+                    let deckCanvas = null;
+                    const allCanvases = document.querySelectorAll('canvas');
+
+                    for (let i = 0; i < allCanvases.length; i++) {
+                      const cvs = allCanvases[i];
+                      // Exclude base map canvases
+                      if (!cvs.classList.contains('mapboxgl-canvas') &&
+                        !cvs.classList.contains('maplibregl-canvas')) {
+
+                        // Heuristic: Must be visible and have size
+                        const rect = cvs.getBoundingClientRect();
+                        if (rect.width > 10 && rect.height > 10) {
+                          deckCanvas = cvs;
+                          break;
+                        }
+                      }
+                    }
+
+                    if (deckCanvas) {
+                      deckCanvas.classList.add('flowmap-overlay-canvas');
+                      // Also force style directly as backup
+                      deckCanvas.style.mixBlendMode = darkMode ? 'screen' : 'multiply';
+                      console.log("[MapGL] Tagged and styled deck canvas:", deckCanvas);
+                    } else {
+                      if (attempt < 20) {
+                        setTimeout(() => updateDeckEffects(darkMode, attempt + 1), 250);
+                      } else {
+                        console.warn("[MapGL] Failed to find deck canvas to tag.");
+                      }
+                    }
+                  };
+
+                  // Initial call
+                  updateDeckEffects(flowmapConfig.settings.darkMode);
+
                   // Create settings menu if requested
                   if (flowmapConfig.showSettingsMenu && typeof FlowmapSettings !== 'undefined') {
                     // Destroy existing GUI if any
@@ -1319,6 +1474,9 @@ HTMLWidgets.widget({
                       function () {
                         // Callback when settings change
                         const newState = guiInstance.getState();
+
+                        // Update blending mode
+                        updateDeckEffects(newState.darkMode);
 
                         // Create new layer with updated settings
                         const updatedLayer = new FlowmapLayer(getLayerProps(newState));

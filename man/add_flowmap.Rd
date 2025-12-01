@@ -22,8 +22,12 @@ add_flowmap(
   clustering_auto = TRUE,
   clustering_level = NULL,
   adaptive_scales_enabled = TRUE,
-  highlight_color = "orange",
+  highlight_color = "#ff9b29",
   max_top_flows = 5000,
+  opacity = 1,
+  clustering_method = "HCA",
+  show_settings_menu = FALSE,
+  dim_basemap = FALSE,
   popup = NULL,
   tooltip = NULL
 )
@@ -74,9 +78,17 @@ add_flowmap(
 
 \item{adaptive_scales_enabled}{Whether to use adaptive scaling. Default is TRUE.}
 
-\item{highlight_color}{Color for highlighting on hover. Default is "orange".}
+\item{highlight_color}{Color for highlighting on hover. Default is "#ff9b29".}
 
 \item{max_top_flows}{Maximum number of top flows to display. Default is 5000.}
+
+\item{opacity}{Overall opacity of the flowmap layer (0-1). Default is 1.0.}
+
+\item{clustering_method}{Clustering algorithm to use. Either "HCA" (Hierarchical Cluster Analysis) or "H3" (H3 hexagonal hierarchical spatial index). Default is "HCA".}
+
+\item{show_settings_menu}{Whether to display an interactive settings menu on the map for real-time customization. Useful for exploring different visual configurations. Default is FALSE.}
+
+\item{dim_basemap}{Whether to apply CSS filters to dim the basemap and make the flowmap stand out. In dark mode, applies grayscale, invert, and color adjustments with reduced opacity. In light mode, applies grayscale with reduced opacity. Matches the visual style of flowmap.gl examples. Default is FALSE.}
 
 \item{popup}{A column name from locations or flows to display in a popup on click.}
 
