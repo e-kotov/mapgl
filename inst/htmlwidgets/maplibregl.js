@@ -1192,6 +1192,11 @@ HTMLWidgets.widget({
             if (typeof FlowmapGL === "undefined") {
               console.error("FlowmapGL library is not loaded. Cannot add flowmap layers.");
             } else {
+              // Store GUI instances
+              if (!map._flowmapGUIs) {
+                map._flowmapGUIs = {};
+              }
+
               // Initialize deck.gl overlay if not already created
               if (!map._deckOverlay) {
                 try {
@@ -1207,6 +1212,18 @@ HTMLWidgets.widget({
                   map.addControl(map._deckOverlay);
 
                   console.log("Deck.gl MapboxOverlay initialized");
+
+                  // Cleanup function for when map is destroyed
+                  map.on('remove', function () {
+                    if (map._flowmapGUIs) {
+                      Object.values(map._flowmapGUIs).forEach(function (guiInstance) {
+                        if (typeof FlowmapSettings !== 'undefined') {
+                          FlowmapSettings.destroyGUI(guiInstance);
+                        }
+                      });
+                      map._flowmapGUIs = {};
+                    }
+                  });
                 } catch (error) {
                   console.error("Failed to initialize MapboxOverlay:", error);
                   return;
@@ -1220,11 +1237,12 @@ HTMLWidgets.widget({
                 try {
                   const { FlowmapLayer } = FlowmapGL;
 
-                  // Create FlowmapLayer instance
-                  const flowmapLayer = new FlowmapLayer({
+                  // Common props function
+                  const getLayerProps = (settings) => ({
                     id: flowmapConfig.id,
                     data: flowmapConfig.data,
                     pickable: true,
+                    opacity: settings.opacity !== undefined ? settings.opacity : 1.0,
                     // Data accessors
                     getLocationId: (loc) => loc.id,
                     getLocationLat: (loc) => loc.lat,
@@ -1233,23 +1251,24 @@ HTMLWidgets.widget({
                     getFlowOriginId: (flow) => flow.origin,
                     getFlowDestId: (flow) => flow.dest,
                     getFlowMagnitude: (flow) => flow.count,
-                    // Settings from R
-                    colorScheme: flowmapConfig.settings.colorScheme,
-                    darkMode: flowmapConfig.settings.darkMode,
-                    animationEnabled: flowmapConfig.settings.animationEnabled,
-                    fadeEnabled: flowmapConfig.settings.fadeEnabled,
-                    fadeAmount: flowmapConfig.settings.fadeAmount,
-                    fadeOpacityEnabled: flowmapConfig.settings.fadeOpacityEnabled,
-                    locationsEnabled: flowmapConfig.settings.locationsEnabled,
-                    locationTotalsEnabled: flowmapConfig.settings.locationTotalsEnabled,
-                    locationLabelsEnabled: flowmapConfig.settings.locationLabelsEnabled,
-                    clusteringEnabled: flowmapConfig.settings.clusteringEnabled,
-                    clusteringAuto: flowmapConfig.settings.clusteringAuto,
-                    clusteringLevel: flowmapConfig.settings.clusteringLevel,
-                    adaptiveScalesEnabled: flowmapConfig.settings.adaptiveScalesEnabled,
-                    highlightColor: flowmapConfig.settings.highlightColor,
-                    maxTopFlowsDisplayNum: flowmapConfig.settings.maxTopFlowsDisplayNum,
-                    // Event handlers for popups/tooltips
+                    // Settings
+                    colorScheme: settings.colorScheme,
+                    darkMode: settings.darkMode,
+                    animationEnabled: settings.animationEnabled,
+                    fadeEnabled: settings.fadeEnabled,
+                    fadeAmount: settings.fadeAmount,
+                    fadeOpacityEnabled: settings.fadeOpacityEnabled,
+                    locationsEnabled: settings.locationsEnabled,
+                    locationTotalsEnabled: settings.locationTotalsEnabled,
+                    locationLabelsEnabled: settings.locationLabelsEnabled,
+                    clusteringEnabled: settings.clusteringEnabled,
+                    clusteringAuto: settings.clusteringAuto,
+                    clusteringLevel: settings.clusteringLevel,
+                    clusteringMethod: settings.clusteringMethod,
+                    adaptiveScalesEnabled: settings.adaptiveScalesEnabled,
+                    highlightColor: settings.highlightColor,
+                    maxTopFlowsDisplayNum: settings.maxTopFlowsDisplayNum,
+                    // Event handlers
                     onHover: (info) => {
                       if (flowmapConfig.tooltip && info && info.object) {
                         // TODO: Implement tooltip display
@@ -1272,8 +1291,52 @@ HTMLWidgets.widget({
                     }
                   });
 
+                  // Create FlowmapLayer instance
+                  const flowmapLayer = new FlowmapLayer(getLayerProps(flowmapConfig.settings));
+
                   flowmapLayers.push(flowmapLayer);
                   console.log("Flowmap layer '" + flowmapConfig.id + "' created successfully");
+
+                  // Create settings menu if requested
+                  if (flowmapConfig.showSettingsMenu && typeof FlowmapSettings !== 'undefined') {
+                    // Destroy existing GUI if any
+                    if (map._flowmapGUIs[flowmapConfig.id]) {
+                      FlowmapSettings.destroyGUI(map._flowmapGUIs[flowmapConfig.id]);
+                    }
+
+                    const guiInstance = FlowmapSettings.createGUI(
+                      flowmapConfig.settings,
+                      function () {
+                        // Callback when settings change
+                        const newState = guiInstance.getState();
+
+                        // Create new layer with updated settings
+                        const updatedLayer = new FlowmapLayer(getLayerProps(newState));
+
+                        // Update deck overlay with new layer
+                        if (map._deckOverlay) {
+                          // Update our local cache of layers
+                          if (!map._flowmapLayers) map._flowmapLayers = [];
+
+                          // Replace the layer in our cache
+                          const index = map._flowmapLayers.findIndex(l => l.id === flowmapConfig.id);
+                          if (index !== -1) {
+                            map._flowmapLayers[index] = updatedLayer;
+                          } else {
+                            map._flowmapLayers.push(updatedLayer);
+                          }
+
+                          // Update the overlay
+                          map._deckOverlay.setProps({
+                            layers: [...map._flowmapLayers]
+                          });
+                        }
+                      }
+                    );
+
+                    // Store GUI instance for cleanup
+                    map._flowmapGUIs[flowmapConfig.id] = guiInstance;
+                  }
                 } catch (error) {
                   console.error("Failed to create flowmap layer '" + flowmapConfig.id + "':", error);
                 }
@@ -1282,7 +1345,22 @@ HTMLWidgets.widget({
               // Update overlay with all flowmap layers
               if (flowmapLayers.length > 0 && map._deckOverlay) {
                 try {
-                  map._deckOverlay.setProps({ layers: flowmapLayers });
+                  // Initialize or update our local cache of layers
+                  if (!map._flowmapLayers) {
+                    map._flowmapLayers = [];
+                  }
+
+                  // Add new layers to our cache, replacing any with same ID
+                  flowmapLayers.forEach(newLayer => {
+                    const index = map._flowmapLayers.findIndex(l => l.id === newLayer.id);
+                    if (index !== -1) {
+                      map._flowmapLayers[index] = newLayer;
+                    } else {
+                      map._flowmapLayers.push(newLayer);
+                    }
+                  });
+
+                  map._deckOverlay.setProps({ layers: [...map._flowmapLayers] });
                   console.log("Flowmap layers added to MapboxOverlay:", flowmapLayers.length);
                 } catch (error) {
                   console.error("Failed to set flowmap layers on overlay:", error);
@@ -1327,303 +1405,302 @@ HTMLWidgets.widget({
           if (!map._initialStyleLoaded) {
             // Add scale control if enabled
             if (x.scale_control) {
-            const scaleControl = new maplibregl.ScaleControl({
-              maxWidth: x.scale_control.maxWidth,
-              unit: x.scale_control.unit,
-            });
-            map.addControl(scaleControl, x.scale_control.position);
-            map.controls.push({ type: "scale", control: scaleControl });
-          }
+              const scaleControl = new maplibregl.ScaleControl({
+                maxWidth: x.scale_control.maxWidth,
+                unit: x.scale_control.unit,
+              });
+              map.addControl(scaleControl, x.scale_control.position);
+              map.controls.push({ type: "scale", control: scaleControl });
+            }
 
-          // Add globe control if enabled
-          if (x.globe_control) {
-            const globeControl = new maplibregl.GlobeControl();
-            map.addControl(globeControl, x.globe_control.position);
-            map.controls.push({ type: "globe", control: globeControl });
-          }
+            // Add globe control if enabled
+            if (x.globe_control) {
+              const globeControl = new maplibregl.GlobeControl();
+              map.addControl(globeControl, x.globe_control.position);
+              map.controls.push({ type: "globe", control: globeControl });
+            }
 
-          // Add custom controls if any are defined
-          if (x.custom_controls) {
-            Object.keys(x.custom_controls).forEach(function (key) {
-              const controlOptions = x.custom_controls[key];
-              const customControlContainer = document.createElement("div");
+            // Add custom controls if any are defined
+            if (x.custom_controls) {
+              Object.keys(x.custom_controls).forEach(function (key) {
+                const controlOptions = x.custom_controls[key];
+                const customControlContainer = document.createElement("div");
 
-              if (controlOptions.className) {
-                customControlContainer.className = controlOptions.className;
-              } else {
-                customControlContainer.className =
-                  "maplibregl-ctrl maplibregl-ctrl-group";
-              }
+                if (controlOptions.className) {
+                  customControlContainer.className = controlOptions.className;
+                } else {
+                  customControlContainer.className =
+                    "maplibregl-ctrl maplibregl-ctrl-group";
+                }
 
-              customControlContainer.innerHTML = controlOptions.html;
+                customControlContainer.innerHTML = controlOptions.html;
 
-              const customControl = {
-                onAdd: function () {
-                  return customControlContainer;
-                },
-                onRemove: function () {
-                  if (customControlContainer.parentNode) {
-                    customControlContainer.parentNode.removeChild(
-                      customControlContainer,
-                    );
-                  }
-                },
+                const customControl = {
+                  onAdd: function () {
+                    return customControlContainer;
+                  },
+                  onRemove: function () {
+                    if (customControlContainer.parentNode) {
+                      customControlContainer.parentNode.removeChild(
+                        customControlContainer,
+                      );
+                    }
+                  },
+                };
+
+                map.addControl(
+                  customControl,
+                  controlOptions.position || "top-right",
+                );
+                map.controls.push({ type: key, control: customControl });
+              });
+            }
+
+            // Add globe minimap if enabled
+            if (x.globe_minimap && x.globe_minimap.enabled) {
+              const globeMinimapOptions = {
+                globeSize: x.globe_minimap.globe_size,
+                landColor: x.globe_minimap.land_color,
+                waterColor: x.globe_minimap.water_color,
+                markerColor: x.globe_minimap.marker_color,
+                markerSize: x.globe_minimap.marker_size,
               };
+              const globeMinimap = new GlobeMinimap(globeMinimapOptions);
+              map.addControl(globeMinimap, x.globe_minimap.position);
+              map.controls.push({ type: "globe_minimap", control: globeMinimap });
+            }
+
+            if (x.setProjection) {
+              x.setProjection.forEach(function (projectionConfig) {
+                if (projectionConfig.projection) {
+                  const projection =
+                    typeof projectionConfig.projection === "string"
+                      ? { type: projectionConfig.projection }
+                      : projectionConfig.projection;
+                  map.setProjection(projection);
+                }
+              });
+            }
+
+            // Add geocoder control if enabled
+            if (x.geocoder_control) {
+              const provider = x.geocoder_control.provider || "osm";
+              let geocoder;
+
+              if (provider === "maptiler") {
+                // MapTiler geocoder
+                const maptilerOptions = {
+                  apiKey: x.geocoder_control.api_key,
+                  maplibregl: maplibregl,
+                  ...x.geocoder_control,
+                };
+
+                // Create MapTiler geocoder
+                geocoder = new maplibreglMaptilerGeocoder.GeocodingControl(
+                  maptilerOptions,
+                );
+              } else {
+                // OSM/Nominatim geocoder (default)
+                const geocoderApi = {
+                  forwardGeocode: async (config) => {
+                    const features = [];
+                    try {
+                      const request = `https://nominatim.openstreetmap.org/search?q=${config.query
+                        }&format=geojson&polygon_geojson=1&addressdetails=1`;
+                      const response = await fetch(request);
+                      const geojson = await response.json();
+                      for (const feature of geojson.features) {
+                        const center = [
+                          feature.bbox[0] +
+                          (feature.bbox[2] - feature.bbox[0]) / 2,
+                          feature.bbox[1] +
+                          (feature.bbox[3] - feature.bbox[1]) / 2,
+                        ];
+                        const point = {
+                          type: "Feature",
+                          geometry: {
+                            type: "Point",
+                            coordinates: center,
+                          },
+                          place_name: feature.properties.display_name,
+                          properties: feature.properties,
+                          text: feature.properties.display_name,
+                          place_type: ["place"],
+                          center,
+                        };
+                        features.push(point);
+                      }
+                    } catch (e) {
+                      console.error(`Failed to forwardGeocode with error: ${e}`);
+                    }
+
+                    return {
+                      features,
+                    };
+                  },
+                };
+                const geocoderOptions = {
+                  maplibregl: maplibregl,
+                  ...x.geocoder_control,
+                };
+
+                // Set default values if not provided
+                if (!geocoderOptions.placeholder)
+                  geocoderOptions.placeholder = "Search";
+                if (typeof geocoderOptions.collapsed === "undefined")
+                  geocoderOptions.collapsed = false;
+
+                geocoder = new MaplibreGeocoder(geocoderApi, geocoderOptions);
+              }
 
               map.addControl(
-                customControl,
-                controlOptions.position || "top-right",
+                geocoder,
+                x.geocoder_control.position || "top-right",
               );
-              map.controls.push({ type: key, control: customControl });
-            });
-          }
+              map.controls.push({ type: "geocoder", control: geocoder });
 
-          // Add globe minimap if enabled
-          if (x.globe_minimap && x.globe_minimap.enabled) {
-            const globeMinimapOptions = {
-              globeSize: x.globe_minimap.globe_size,
-              landColor: x.globe_minimap.land_color,
-              waterColor: x.globe_minimap.water_color,
-              markerColor: x.globe_minimap.marker_color,
-              markerSize: x.globe_minimap.marker_size,
-            };
-            const globeMinimap = new GlobeMinimap(globeMinimapOptions);
-            map.addControl(globeMinimap, x.globe_minimap.position);
-            map.controls.push({ type: "globe_minimap", control: globeMinimap });
-          }
-
-          if (x.setProjection) {
-            x.setProjection.forEach(function (projectionConfig) {
-              if (projectionConfig.projection) {
-                const projection =
-                  typeof projectionConfig.projection === "string"
-                    ? { type: projectionConfig.projection }
-                    : projectionConfig.projection;
-                map.setProjection(projection);
-              }
-            });
-          }
-
-          // Add geocoder control if enabled
-          if (x.geocoder_control) {
-            const provider = x.geocoder_control.provider || "osm";
-            let geocoder;
-
-            if (provider === "maptiler") {
-              // MapTiler geocoder
-              const maptilerOptions = {
-                apiKey: x.geocoder_control.api_key,
-                maplibregl: maplibregl,
-                ...x.geocoder_control,
-              };
-
-              // Create MapTiler geocoder
-              geocoder = new maplibreglMaptilerGeocoder.GeocodingControl(
-                maptilerOptions,
-              );
-            } else {
-              // OSM/Nominatim geocoder (default)
-              const geocoderApi = {
-                forwardGeocode: async (config) => {
-                  const features = [];
-                  try {
-                    const request = `https://nominatim.openstreetmap.org/search?q=${
-                      config.query
-                    }&format=geojson&polygon_geojson=1&addressdetails=1`;
-                    const response = await fetch(request);
-                    const geojson = await response.json();
-                    for (const feature of geojson.features) {
-                      const center = [
-                        feature.bbox[0] +
-                          (feature.bbox[2] - feature.bbox[0]) / 2,
-                        feature.bbox[1] +
-                          (feature.bbox[3] - feature.bbox[1]) / 2,
-                      ];
-                      const point = {
-                        type: "Feature",
-                        geometry: {
-                          type: "Point",
-                          coordinates: center,
-                        },
-                        place_name: feature.properties.display_name,
-                        properties: feature.properties,
-                        text: feature.properties.display_name,
-                        place_type: ["place"],
-                        center,
-                      };
-                      features.push(point);
-                    }
-                  } catch (e) {
-                    console.error(`Failed to forwardGeocode with error: ${e}`);
-                  }
-
-                  return {
-                    features,
-                  };
-                },
-              };
-              const geocoderOptions = {
-                maplibregl: maplibregl,
-                ...x.geocoder_control,
-              };
-
-              // Set default values if not provided
-              if (!geocoderOptions.placeholder)
-                geocoderOptions.placeholder = "Search";
-              if (typeof geocoderOptions.collapsed === "undefined")
-                geocoderOptions.collapsed = false;
-
-              geocoder = new MaplibreGeocoder(geocoderApi, geocoderOptions);
-            }
-
-            map.addControl(
-              geocoder,
-              x.geocoder_control.position || "top-right",
-            );
-            map.controls.push({ type: "geocoder", control: geocoder });
-
-            // Apply CSS fix for MapTiler geocoder to prevent cutoff
-            if (provider === "maptiler") {
-              setTimeout(() => {
-                const controlContainer = document.querySelector(
-                  ".maplibregl-ctrl-geocoder",
-                );
-                if (controlContainer) {
-                  controlContainer.style.maxWidth = "300px";
-                  controlContainer.style.width = "auto";
-                }
-              }, 100);
-            }
-
-            // Handle geocoder results in Shiny mode
-            if (HTMLWidgets.shinyMode) {
+              // Apply CSS fix for MapTiler geocoder to prevent cutoff
               if (provider === "maptiler") {
-                // MapTiler uses different event names
-                geocoder.on("pick", function (e) {
-                  Shiny.setInputValue(el.id + "_geocoder", {
-                    result: e,
-                    time: new Date(),
-                  });
-                });
-              } else {
-                // OSM geocoder
-                geocoder.on("results", function (e) {
-                  Shiny.setInputValue(el.id + "_geocoder", {
-                    result: e,
-                    time: new Date(),
-                  });
-                });
+                setTimeout(() => {
+                  const controlContainer = document.querySelector(
+                    ".maplibregl-ctrl-geocoder",
+                  );
+                  if (controlContainer) {
+                    controlContainer.style.maxWidth = "300px";
+                    controlContainer.style.width = "auto";
+                  }
+                }, 100);
               }
-            }
-          }
 
-          if (x.draw_control && x.draw_control.enabled) {
-            MapboxDraw.constants.classes.CONTROL_BASE = "maplibregl-ctrl";
-            MapboxDraw.constants.classes.CONTROL_PREFIX = "maplibregl-ctrl-";
-            MapboxDraw.constants.classes.CONTROL_GROUP =
-              "maplibregl-ctrl-group";
-
-            let drawOptions = x.draw_control.options || {};
-
-            // Generate styles if styling parameters provided
-            if (x.draw_control.styling) {
-              const generatedStyles = generateDrawStyles(
-                x.draw_control.styling,
-              );
-              if (generatedStyles) {
-                drawOptions.styles = generatedStyles;
+              // Handle geocoder results in Shiny mode
+              if (HTMLWidgets.shinyMode) {
+                if (provider === "maptiler") {
+                  // MapTiler uses different event names
+                  geocoder.on("pick", function (e) {
+                    Shiny.setInputValue(el.id + "_geocoder", {
+                      result: e,
+                      time: new Date(),
+                    });
+                  });
+                } else {
+                  // OSM geocoder
+                  geocoder.on("results", function (e) {
+                    Shiny.setInputValue(el.id + "_geocoder", {
+                      result: e,
+                      time: new Date(),
+                    });
+                  });
+                }
               }
             }
 
-            if (x.draw_control.freehand) {
-              drawOptions = Object.assign({}, drawOptions, {
-                modes: Object.assign({}, MapboxDraw.modes, {
-                  draw_polygon: Object.assign(
-                    {},
-                    MapboxDraw.modes.draw_freehand,
-                    {
-                      // Store the simplify_freehand option on the map object
-                      onSetup: function (opts) {
-                        const state =
-                          MapboxDraw.modes.draw_freehand.onSetup.call(
-                            this,
-                            opts,
-                          );
-                        this.map.simplify_freehand =
-                          x.draw_control.simplify_freehand;
-                        return state;
+            if (x.draw_control && x.draw_control.enabled) {
+              MapboxDraw.constants.classes.CONTROL_BASE = "maplibregl-ctrl";
+              MapboxDraw.constants.classes.CONTROL_PREFIX = "maplibregl-ctrl-";
+              MapboxDraw.constants.classes.CONTROL_GROUP =
+                "maplibregl-ctrl-group";
+
+              let drawOptions = x.draw_control.options || {};
+
+              // Generate styles if styling parameters provided
+              if (x.draw_control.styling) {
+                const generatedStyles = generateDrawStyles(
+                  x.draw_control.styling,
+                );
+                if (generatedStyles) {
+                  drawOptions.styles = generatedStyles;
+                }
+              }
+
+              if (x.draw_control.freehand) {
+                drawOptions = Object.assign({}, drawOptions, {
+                  modes: Object.assign({}, MapboxDraw.modes, {
+                    draw_polygon: Object.assign(
+                      {},
+                      MapboxDraw.modes.draw_freehand,
+                      {
+                        // Store the simplify_freehand option on the map object
+                        onSetup: function (opts) {
+                          const state =
+                            MapboxDraw.modes.draw_freehand.onSetup.call(
+                              this,
+                              opts,
+                            );
+                          this.map.simplify_freehand =
+                            x.draw_control.simplify_freehand;
+                          return state;
+                        },
                       },
-                    },
-                  ),
-                }),
-                // defaultMode: 'draw_polygon' # Don't set the default yet
-              });
-            }
-
-            // Add rectangle mode if enabled
-            if (x.draw_control.rectangle) {
-              if (!drawOptions.modes) {
-                drawOptions.modes = Object.assign({}, MapboxDraw.modes);
+                    ),
+                  }),
+                  // defaultMode: 'draw_polygon' # Don't set the default yet
+                });
               }
-              drawOptions.modes.draw_rectangle =
-                MapboxDraw.modes.draw_rectangle;
-            }
 
-            // Add radius mode if enabled
-            if (x.draw_control.radius) {
-              if (!drawOptions.modes) {
-                drawOptions.modes = Object.assign({}, MapboxDraw.modes);
+              // Add rectangle mode if enabled
+              if (x.draw_control.rectangle) {
+                if (!drawOptions.modes) {
+                  drawOptions.modes = Object.assign({}, MapboxDraw.modes);
+                }
+                drawOptions.modes.draw_rectangle =
+                  MapboxDraw.modes.draw_rectangle;
               }
-              drawOptions.modes.draw_radius = MapboxDraw.modes.draw_radius;
-            }
 
-            // Fix MapLibre compatibility - ensure we always have custom styles
-            if (!drawOptions.styles) {
-              drawOptions.styles = generateDrawStyles({
-                vertex_radius: 5,
-                active_color: "#fbb03b",
-                point_color: "#3bb2d0",
-                line_color: "#3bb2d0",
-                fill_color: "#3bb2d0",
-                fill_opacity: 0.1,
-                line_width: 2,
-              });
-            }
+              // Add radius mode if enabled
+              if (x.draw_control.radius) {
+                if (!drawOptions.modes) {
+                  drawOptions.modes = Object.assign({}, MapboxDraw.modes);
+                }
+                drawOptions.modes.draw_radius = MapboxDraw.modes.draw_radius;
+              }
 
-            draw = new MapboxDraw(drawOptions);
-            map.addControl(draw, x.draw_control.position);
-            map.controls.push({ type: "draw", control: draw });
+              // Fix MapLibre compatibility - ensure we always have custom styles
+              if (!drawOptions.styles) {
+                drawOptions.styles = generateDrawStyles({
+                  vertex_radius: 5,
+                  active_color: "#fbb03b",
+                  point_color: "#3bb2d0",
+                  line_color: "#3bb2d0",
+                  fill_color: "#3bb2d0",
+                  fill_opacity: 0.1,
+                  line_width: 2,
+                });
+              }
 
-            // Add lasso icon CSS for freehand mode
-            if (x.draw_control.freehand) {
-              if (!document.querySelector("#mapgl-freehand-lasso-styles")) {
-                const style = document.createElement("style");
-                style.id = "mapgl-freehand-lasso-styles";
-                style.textContent = `
+              draw = new MapboxDraw(drawOptions);
+              map.addControl(draw, x.draw_control.position);
+              map.controls.push({ type: "draw", control: draw });
+
+              // Add lasso icon CSS for freehand mode
+              if (x.draw_control.freehand) {
+                if (!document.querySelector("#mapgl-freehand-lasso-styles")) {
+                  const style = document.createElement("style");
+                  style.id = "mapgl-freehand-lasso-styles";
+                  style.textContent = `
                   .mapbox-gl-draw_polygon {
                     background-image: url('data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"%3E%3Cpath d="M 7 3 C 5 2.5, 3.5 3, 3 5 C 2.5 7, 3 8.5, 4 9.5 C 5 10.5, 5.5 11.5, 5 13 C 4.5 14.5, 5 15.5, 6.5 16 C 8 16.5, 9.5 16, 11 15 C 12.5 14, 13.5 13, 14.5 11.5 C 15.5 10, 16 8.5, 15.5 7 C 15 5.5, 14 4.5, 12.5 3.5 C 11 2.5, 9 2.5, 7 3 Z" fill="none" stroke="%23000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/%3E%3C/svg%3E') !important;
                   }
                 `;
-                document.head.appendChild(style);
+                  document.head.appendChild(style);
+                }
+
+                // Update tooltip for freehand mode
+                setTimeout(() => {
+                  const polygonButton = map
+                    .getContainer()
+                    .querySelector(".mapbox-gl-draw_polygon");
+                  if (polygonButton) {
+                    polygonButton.title = "Freehand polygon tool (p)";
+                  }
+                }, 100);
               }
 
-              // Update tooltip for freehand mode
-              setTimeout(() => {
-                const polygonButton = map
-                  .getContainer()
-                  .querySelector(".mapbox-gl-draw_polygon");
-                if (polygonButton) {
-                  polygonButton.title = "Freehand polygon tool (p)";
-                }
-              }, 100);
-            }
-
-            // Add rectangle icon CSS if rectangle mode is enabled
-            if (x.draw_control.rectangle) {
-              if (!document.querySelector("#mapgl-rectangle-styles")) {
-                const style = document.createElement("style");
-                style.id = "mapgl-rectangle-styles";
-                style.textContent = `
+              // Add rectangle icon CSS if rectangle mode is enabled
+              if (x.draw_control.rectangle) {
+                if (!document.querySelector("#mapgl-rectangle-styles")) {
+                  const style = document.createElement("style");
+                  style.id = "mapgl-rectangle-styles";
+                  style.textContent = `
                   .mapbox-gl-draw_rectangle {
                     background: transparent;
                     border: none;
@@ -1644,16 +1721,16 @@ HTMLWidgets.widget({
                     background-color: rgba(0, 0, 0, 0.05);
                   }
                 `;
-                document.head.appendChild(style);
+                  document.head.appendChild(style);
+                }
               }
-            }
 
-            // Add radius/circle icon CSS if radius mode is enabled
-            if (x.draw_control.radius) {
-              if (!document.querySelector("#mapgl-radius-styles")) {
-                const style = document.createElement("style");
-                style.id = "mapgl-radius-styles";
-                style.textContent = `
+              // Add radius/circle icon CSS if radius mode is enabled
+              if (x.draw_control.radius) {
+                if (!document.querySelector("#mapgl-radius-styles")) {
+                  const style = document.createElement("style");
+                  style.id = "mapgl-radius-styles";
+                  style.textContent = `
                   .mapbox-gl-draw_radius {
                     background: transparent;
                     border: none;
@@ -1674,113 +1751,113 @@ HTMLWidgets.widget({
                     background-color: rgba(0, 0, 0, 0.05);
                   }
                 `;
-                document.head.appendChild(style);
-              }
-            }
-
-            // Add event listeners
-            map.on("draw.create", updateDrawnFeatures);
-            map.on("draw.delete", updateDrawnFeatures);
-            map.on("draw.update", updateDrawnFeatures);
-
-            // Add measurement functionality if enabled
-            if (x.draw_control.show_measurements) {
-              initializeMeasurements(
-                map,
-                draw,
-                x.draw_control.measurement_units,
-              );
-            }
-
-            // Add initial features if provided
-            if (x.draw_control.source) {
-              addSourceFeaturesToDraw(draw, x.draw_control.source, map);
-            }
-
-            // Process any queued features
-            if (x.draw_features_queue) {
-              x.draw_features_queue.forEach(function (data) {
-                if (data.clear_existing) {
-                  draw.deleteAll();
+                  document.head.appendChild(style);
                 }
-                addSourceFeaturesToDraw(draw, data.source, map);
-              });
-            }
+              }
 
-            // Add custom mode buttons
-            setTimeout(() => {
-              const drawControlGroup = map
-                .getContainer()
-                .querySelector(".maplibregl-ctrl-group");
+              // Add event listeners
+              map.on("draw.create", updateDrawnFeatures);
+              map.on("draw.delete", updateDrawnFeatures);
+              map.on("draw.update", updateDrawnFeatures);
 
-              if (drawControlGroup) {
-                // Find the trash button to insert before it
-                const trashBtn = drawControlGroup.querySelector(
-                  ".mapbox-gl-draw_trash",
+              // Add measurement functionality if enabled
+              if (x.draw_control.show_measurements) {
+                initializeMeasurements(
+                  map,
+                  draw,
+                  x.draw_control.measurement_units,
                 );
+              }
 
-                if (x.draw_control.rectangle) {
-                  const rectangleBtn = document.createElement("button");
-                  rectangleBtn.className = "mapbox-gl-draw_rectangle";
-                  rectangleBtn.title = "Rectangle tool";
-                  rectangleBtn.type = "button";
-                  rectangleBtn.onclick = function () {
-                    draw.changeMode("draw_rectangle");
-                    // Update active state
-                    drawControlGroup
-                      .querySelectorAll("button")
-                      .forEach((btn) => btn.classList.remove("active"));
-                    rectangleBtn.classList.add("active");
-                  };
-                  // Insert before trash button if it exists, otherwise append
-                  if (trashBtn) {
-                    drawControlGroup.insertBefore(rectangleBtn, trashBtn);
-                  } else {
-                    drawControlGroup.appendChild(rectangleBtn);
+              // Add initial features if provided
+              if (x.draw_control.source) {
+                addSourceFeaturesToDraw(draw, x.draw_control.source, map);
+              }
+
+              // Process any queued features
+              if (x.draw_features_queue) {
+                x.draw_features_queue.forEach(function (data) {
+                  if (data.clear_existing) {
+                    draw.deleteAll();
+                  }
+                  addSourceFeaturesToDraw(draw, data.source, map);
+                });
+              }
+
+              // Add custom mode buttons
+              setTimeout(() => {
+                const drawControlGroup = map
+                  .getContainer()
+                  .querySelector(".maplibregl-ctrl-group");
+
+                if (drawControlGroup) {
+                  // Find the trash button to insert before it
+                  const trashBtn = drawControlGroup.querySelector(
+                    ".mapbox-gl-draw_trash",
+                  );
+
+                  if (x.draw_control.rectangle) {
+                    const rectangleBtn = document.createElement("button");
+                    rectangleBtn.className = "mapbox-gl-draw_rectangle";
+                    rectangleBtn.title = "Rectangle tool";
+                    rectangleBtn.type = "button";
+                    rectangleBtn.onclick = function () {
+                      draw.changeMode("draw_rectangle");
+                      // Update active state
+                      drawControlGroup
+                        .querySelectorAll("button")
+                        .forEach((btn) => btn.classList.remove("active"));
+                      rectangleBtn.classList.add("active");
+                    };
+                    // Insert before trash button if it exists, otherwise append
+                    if (trashBtn) {
+                      drawControlGroup.insertBefore(rectangleBtn, trashBtn);
+                    } else {
+                      drawControlGroup.appendChild(rectangleBtn);
+                    }
+                  }
+
+                  if (x.draw_control.radius) {
+                    const radiusBtn = document.createElement("button");
+                    radiusBtn.className = "mapbox-gl-draw_radius";
+                    radiusBtn.title = "Radius/Circle tool";
+                    radiusBtn.type = "button";
+                    radiusBtn.onclick = function () {
+                      draw.changeMode("draw_radius");
+                      // Update active state
+                      drawControlGroup
+                        .querySelectorAll("button")
+                        .forEach((btn) => btn.classList.remove("active"));
+                      radiusBtn.classList.add("active");
+                    };
+                    // Insert before trash button if it exists, otherwise append
+                    if (trashBtn) {
+                      drawControlGroup.insertBefore(radiusBtn, trashBtn);
+                    } else {
+                      drawControlGroup.appendChild(radiusBtn);
+                    }
                   }
                 }
+              }, 100);
 
-                if (x.draw_control.radius) {
-                  const radiusBtn = document.createElement("button");
-                  radiusBtn.className = "mapbox-gl-draw_radius";
-                  radiusBtn.title = "Radius/Circle tool";
-                  radiusBtn.type = "button";
-                  radiusBtn.onclick = function () {
-                    draw.changeMode("draw_radius");
-                    // Update active state
-                    drawControlGroup
-                      .querySelectorAll("button")
-                      .forEach((btn) => btn.classList.remove("active"));
-                    radiusBtn.classList.add("active");
-                  };
-                  // Insert before trash button if it exists, otherwise append
-                  if (trashBtn) {
-                    drawControlGroup.insertBefore(radiusBtn, trashBtn);
-                  } else {
-                    drawControlGroup.appendChild(radiusBtn);
-                  }
+              // Apply orientation styling
+              if (x.draw_control.orientation === "horizontal") {
+                const drawBar = map
+                  .getContainer()
+                  .querySelector(".maplibregl-ctrl-group");
+                if (drawBar) {
+                  drawBar.style.display = "flex";
+                  drawBar.style.flexDirection = "row";
                 }
               }
-            }, 100);
 
-            // Apply orientation styling
-            if (x.draw_control.orientation === "horizontal") {
-              const drawBar = map
-                .getContainer()
-                .querySelector(".maplibregl-ctrl-group");
-              if (drawBar) {
-                drawBar.style.display = "flex";
-                drawBar.style.flexDirection = "row";
-              }
-            }
-
-            // Add download button if requested
-            if (x.draw_control.download_button) {
-              // Add CSS for download button if not already added
-              if (!document.querySelector("#mapgl-draw-download-styles")) {
-                const style = document.createElement("style");
-                style.id = "mapgl-draw-download-styles";
-                style.textContent = `
+              // Add download button if requested
+              if (x.draw_control.download_button) {
+                // Add CSS for download button if not already added
+                if (!document.querySelector("#mapgl-draw-download-styles")) {
+                  const style = document.createElement("style");
+                  style.id = "mapgl-draw-download-styles";
+                  style.textContent = `
                   .mapbox-gl-draw_download {
                     background: transparent;
                     border: none;
@@ -1801,397 +1878,369 @@ HTMLWidgets.widget({
                     fill: #333;
                   }
                 `;
-                document.head.appendChild(style);
-              }
+                  document.head.appendChild(style);
+                }
 
-              // Small delay to ensure Draw control is fully rendered
-              setTimeout(() => {
-                // Find the Draw control button group
-                const drawButtons = map
-                  .getContainer()
-                  .querySelector(
-                    ".maplibregl-ctrl-group:has(.mapbox-gl-draw_polygon)",
-                  );
+                // Small delay to ensure Draw control is fully rendered
+                setTimeout(() => {
+                  // Find the Draw control button group
+                  const drawButtons = map
+                    .getContainer()
+                    .querySelector(
+                      ".maplibregl-ctrl-group:has(.mapbox-gl-draw_polygon)",
+                    );
 
-                if (drawButtons) {
-                  // Create download button
-                  const downloadBtn = document.createElement("button");
-                  downloadBtn.className = "mapbox-gl-draw_download";
-                  downloadBtn.title = "Download drawn features as GeoJSON";
+                  if (drawButtons) {
+                    // Create download button
+                    const downloadBtn = document.createElement("button");
+                    downloadBtn.className = "mapbox-gl-draw_download";
+                    downloadBtn.title = "Download drawn features as GeoJSON";
 
-                  // Add SVG download icon
-                  downloadBtn.innerHTML = `
+                    // Add SVG download icon
+                    downloadBtn.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                       <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
                     </svg>
                   `;
 
-                  downloadBtn.addEventListener("click", () => {
-                    // Get all drawn features
-                    const data = draw.getAll();
+                    downloadBtn.addEventListener("click", () => {
+                      // Get all drawn features
+                      const data = draw.getAll();
 
-                    if (data.features.length === 0) {
-                      alert(
-                        "No features to download. Please draw something first!",
-                      );
-                      return;
-                    }
+                      if (data.features.length === 0) {
+                        alert(
+                          "No features to download. Please draw something first!",
+                        );
+                        return;
+                      }
 
-                    // Convert to string with nice formatting
-                    const dataStr = JSON.stringify(data, null, 2);
+                      // Convert to string with nice formatting
+                      const dataStr = JSON.stringify(data, null, 2);
 
-                    // Create blob and download
-                    const blob = new Blob([dataStr], {
-                      type: "application/json",
+                      // Create blob and download
+                      const blob = new Blob([dataStr], {
+                        type: "application/json",
+                      });
+                      const url = URL.createObjectURL(blob);
+
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `${x.draw_control.download_filename}.geojson`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
                     });
-                    const url = URL.createObjectURL(blob);
 
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `${x.draw_control.download_filename}.geojson`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                  });
-
-                  // Append to the Draw control button group
-                  drawButtons.appendChild(downloadBtn);
-                }
-              }, 100);
+                    // Append to the Draw control button group
+                    drawButtons.appendChild(downloadBtn);
+                  }
+                }, 100);
+              }
             }
-          }
 
-          function updateDrawnFeatures() {
-            if (draw) {
-              var drawnFeatures = draw.getAll();
+            function updateDrawnFeatures() {
+              if (draw) {
+                var drawnFeatures = draw.getAll();
+                if (HTMLWidgets.shinyMode) {
+                  Shiny.setInputValue(
+                    el.id + "_drawn_features",
+                    JSON.stringify(drawnFeatures),
+                  );
+                }
+                // Store drawn features in the widget's data
+                if (el.querySelector) {
+                  var widget = HTMLWidgets.find("#" + el.id);
+                  if (widget) {
+                    widget.drawFeatures = drawnFeatures;
+                  }
+                }
+              }
+            }
+
+            if (!x.add) {
+              const existingLegends = el.querySelectorAll(".mapboxgl-legend");
+              existingLegends.forEach((legend) => legend.remove());
+            }
+
+            if (x.legend_html && x.legend_css) {
+              const legendCss = document.createElement("style");
+              legendCss.innerHTML = x.legend_css;
+              document.head.appendChild(legendCss);
+
+              const legend = document.createElement("div");
+              legend.innerHTML = x.legend_html;
+              legend.classList.add("mapboxgl-legend");
+              el.appendChild(legend);
+            }
+
+            // Add fullscreen control if enabled
+            if (x.fullscreen_control && x.fullscreen_control.enabled) {
+              const position = x.fullscreen_control.position || "top-right";
+              const fullscreen = new maplibregl.FullscreenControl();
+              map.addControl(fullscreen, position);
+              map.controls.push({ type: "fullscreen", control: fullscreen });
+            }
+
+            // Add geolocate control if enabled
+            if (x.geolocate_control) {
+              const geolocate = new maplibregl.GeolocateControl({
+                positionOptions: x.geolocate_control.positionOptions,
+                trackUserLocation: x.geolocate_control.trackUserLocation,
+                showAccuracyCircle: x.geolocate_control.showAccuracyCircle,
+                showUserLocation: x.geolocate_control.showUserLocation,
+                showUserHeading: x.geolocate_control.showUserHeading,
+                fitBoundsOptions: x.geolocate_control.fitBoundsOptions,
+              });
+              map.addControl(geolocate, x.geolocate_control.position);
+              map.controls.push({ type: "geolocate", control: geolocate });
+
               if (HTMLWidgets.shinyMode) {
-                Shiny.setInputValue(
-                  el.id + "_drawn_features",
-                  JSON.stringify(drawnFeatures),
-                );
-              }
-              // Store drawn features in the widget's data
-              if (el.querySelector) {
-                var widget = HTMLWidgets.find("#" + el.id);
-                if (widget) {
-                  widget.drawFeatures = drawnFeatures;
-                }
-              }
-            }
-          }
-
-          if (!x.add) {
-            const existingLegends = el.querySelectorAll(".mapboxgl-legend");
-            existingLegends.forEach((legend) => legend.remove());
-          }
-
-          if (x.legend_html && x.legend_css) {
-            const legendCss = document.createElement("style");
-            legendCss.innerHTML = x.legend_css;
-            document.head.appendChild(legendCss);
-
-            const legend = document.createElement("div");
-            legend.innerHTML = x.legend_html;
-            legend.classList.add("mapboxgl-legend");
-            el.appendChild(legend);
-          }
-
-          // Add fullscreen control if enabled
-          if (x.fullscreen_control && x.fullscreen_control.enabled) {
-            const position = x.fullscreen_control.position || "top-right";
-            const fullscreen = new maplibregl.FullscreenControl();
-            map.addControl(fullscreen, position);
-            map.controls.push({ type: "fullscreen", control: fullscreen });
-          }
-
-          // Add geolocate control if enabled
-          if (x.geolocate_control) {
-            const geolocate = new maplibregl.GeolocateControl({
-              positionOptions: x.geolocate_control.positionOptions,
-              trackUserLocation: x.geolocate_control.trackUserLocation,
-              showAccuracyCircle: x.geolocate_control.showAccuracyCircle,
-              showUserLocation: x.geolocate_control.showUserLocation,
-              showUserHeading: x.geolocate_control.showUserHeading,
-              fitBoundsOptions: x.geolocate_control.fitBoundsOptions,
-            });
-            map.addControl(geolocate, x.geolocate_control.position);
-            map.controls.push({ type: "geolocate", control: geolocate });
-
-            if (HTMLWidgets.shinyMode) {
-              geolocate.on("geolocate", function (event) {
-                Shiny.setInputValue(el.id + "_geolocate", {
-                  coords: event.coords,
-                  time: new Date(),
-                });
-              });
-
-              geolocate.on("trackuserlocationstart", function () {
-                Shiny.setInputValue(el.id + "_geolocate_tracking", {
-                  status: "start",
-                  time: new Date(),
-                });
-              });
-
-              geolocate.on("trackuserlocationend", function () {
-                Shiny.setInputValue(el.id + "_geolocate_tracking", {
-                  status: "end",
-                  time: new Date(),
-                });
-              });
-
-              geolocate.on("error", function (error) {
-                if (error.error.code === 1) {
-                  Shiny.setInputValue(el.id + "_geolocate_error", {
-                    message: "Location permission denied",
+                geolocate.on("geolocate", function (event) {
+                  Shiny.setInputValue(el.id + "_geolocate", {
+                    coords: event.coords,
                     time: new Date(),
                   });
+                });
+
+                geolocate.on("trackuserlocationstart", function () {
+                  Shiny.setInputValue(el.id + "_geolocate_tracking", {
+                    status: "start",
+                    time: new Date(),
+                  });
+                });
+
+                geolocate.on("trackuserlocationend", function () {
+                  Shiny.setInputValue(el.id + "_geolocate_tracking", {
+                    status: "end",
+                    time: new Date(),
+                  });
+                });
+
+                geolocate.on("error", function (error) {
+                  if (error.error.code === 1) {
+                    Shiny.setInputValue(el.id + "_geolocate_error", {
+                      message: "Location permission denied",
+                      time: new Date(),
+                    });
+                  }
+                });
+              }
+            }
+
+            // Add navigation control if enabled
+            if (x.navigation_control) {
+              const nav = new maplibregl.NavigationControl({
+                showCompass: x.navigation_control.show_compass,
+                showZoom: x.navigation_control.show_zoom,
+                visualizePitch: x.navigation_control.visualize_pitch,
+              });
+              map.addControl(nav, x.navigation_control.position);
+              map.controls.push({ type: "navigation", control: nav });
+
+              if (x.navigation_control.orientation === "horizontal") {
+                const navBar = map
+                  .getContainer()
+                  .querySelector(
+                    ".maplibregl-ctrl-group:not(.mapbox-gl-draw_ctrl-draw-btn)",
+                  );
+                if (navBar) {
+                  navBar.style.display = "flex";
+                  navBar.style.flexDirection = "row";
+                }
+              }
+            }
+
+            // Add reset control if enabled
+            if (x.reset_control) {
+              const resetControl = document.createElement("button");
+              resetControl.className =
+                "maplibregl-ctrl-icon maplibregl-ctrl-reset";
+              resetControl.type = "button";
+              resetControl.setAttribute("aria-label", "Reset");
+              resetControl.innerHTML = "⟲";
+              resetControl.style.fontSize = "30px";
+              resetControl.style.fontWeight = "bold";
+              resetControl.style.backgroundColor = "white";
+              resetControl.style.border = "none";
+              resetControl.style.cursor = "pointer";
+              resetControl.style.padding = "0";
+              resetControl.style.width = "30px";
+              resetControl.style.height = "30px";
+              resetControl.style.display = "flex";
+              resetControl.style.justifyContent = "center";
+              resetControl.style.alignItems = "center";
+              resetControl.style.transition = "background-color 0.2s";
+              resetControl.addEventListener("mouseover", function () {
+                this.style.backgroundColor = "#f0f0f0";
+              });
+              resetControl.addEventListener("mouseout", function () {
+                this.style.backgroundColor = "white";
+              });
+
+              const resetContainer = document.createElement("div");
+              resetContainer.className = "maplibregl-ctrl maplibregl-ctrl-group";
+              resetContainer.appendChild(resetControl);
+
+              // Initialize with empty object, will be populated after map loads
+              let initialView = {};
+
+              // Capture the initial view after the map has loaded and all view operations are complete
+              map.once("load", function () {
+                initialView = {
+                  center: map.getCenter(),
+                  zoom: map.getZoom(),
+                  pitch: map.getPitch(),
+                  bearing: map.getBearing(),
+                  animate: x.reset_control.animate,
+                };
+
+                if (x.reset_control.duration) {
+                  initialView.duration = x.reset_control.duration;
                 }
               });
-            }
-          }
 
-          // Add navigation control if enabled
-          if (x.navigation_control) {
-            const nav = new maplibregl.NavigationControl({
-              showCompass: x.navigation_control.show_compass,
-              showZoom: x.navigation_control.show_zoom,
-              visualizePitch: x.navigation_control.visualize_pitch,
-            });
-            map.addControl(nav, x.navigation_control.position);
-            map.controls.push({ type: "navigation", control: nav });
-
-            if (x.navigation_control.orientation === "horizontal") {
-              const navBar = map
-                .getContainer()
-                .querySelector(
-                  ".maplibregl-ctrl-group:not(.mapbox-gl-draw_ctrl-draw-btn)",
-                );
-              if (navBar) {
-                navBar.style.display = "flex";
-                navBar.style.flexDirection = "row";
-              }
-            }
-          }
-
-          // Add reset control if enabled
-          if (x.reset_control) {
-            const resetControl = document.createElement("button");
-            resetControl.className =
-              "maplibregl-ctrl-icon maplibregl-ctrl-reset";
-            resetControl.type = "button";
-            resetControl.setAttribute("aria-label", "Reset");
-            resetControl.innerHTML = "⟲";
-            resetControl.style.fontSize = "30px";
-            resetControl.style.fontWeight = "bold";
-            resetControl.style.backgroundColor = "white";
-            resetControl.style.border = "none";
-            resetControl.style.cursor = "pointer";
-            resetControl.style.padding = "0";
-            resetControl.style.width = "30px";
-            resetControl.style.height = "30px";
-            resetControl.style.display = "flex";
-            resetControl.style.justifyContent = "center";
-            resetControl.style.alignItems = "center";
-            resetControl.style.transition = "background-color 0.2s";
-            resetControl.addEventListener("mouseover", function () {
-              this.style.backgroundColor = "#f0f0f0";
-            });
-            resetControl.addEventListener("mouseout", function () {
-              this.style.backgroundColor = "white";
-            });
-
-            const resetContainer = document.createElement("div");
-            resetContainer.className = "maplibregl-ctrl maplibregl-ctrl-group";
-            resetContainer.appendChild(resetControl);
-
-            // Initialize with empty object, will be populated after map loads
-            let initialView = {};
-
-            // Capture the initial view after the map has loaded and all view operations are complete
-            map.once("load", function () {
-              initialView = {
-                center: map.getCenter(),
-                zoom: map.getZoom(),
-                pitch: map.getPitch(),
-                bearing: map.getBearing(),
-                animate: x.reset_control.animate,
+              resetControl.onclick = function () {
+                // Only reset if we have captured the initial view
+                if (initialView.center) {
+                  map.easeTo(initialView);
+                }
               };
 
-              if (x.reset_control.duration) {
-                initialView.duration = x.reset_control.duration;
-              }
-            });
+              const resetControlObj = {
+                onAdd: function () {
+                  return resetContainer;
+                },
+                onRemove: function () {
+                  resetContainer.parentNode.removeChild(resetContainer);
+                },
+              };
 
-            resetControl.onclick = function () {
-              // Only reset if we have captured the initial view
-              if (initialView.center) {
-                map.easeTo(initialView);
-              }
-            };
+              map.addControl(resetControlObj, x.reset_control.position);
 
-            const resetControlObj = {
-              onAdd: function () {
-                return resetContainer;
-              },
-              onRemove: function () {
-                resetContainer.parentNode.removeChild(resetContainer);
-              },
-            };
-
-            map.addControl(resetControlObj, x.reset_control.position);
-
-            map.controls.push({ type: "reset", control: resetControlObj });
-          }
-
-          if (x.images && Array.isArray(x.images)) {
-            x.images.forEach(async function (imageInfo) {
-              try {
-                const image = await map.loadImage(imageInfo.url);
-                if (!map.hasImage(imageInfo.id)) {
-                  map.addImage(imageInfo.id, image.data, imageInfo.options);
-                }
-              } catch (error) {
-                console.error("Error loading image:", error);
-              }
-            });
-          } else if (x.images) {
-            console.error("x.images is not an array:", x.images);
-          }
-
-          // Add the layers control if provided
-          if (x.layers_control) {
-            const layersControl = document.createElement("div");
-            layersControl.id = x.layers_control.control_id;
-            layersControl.className = x.layers_control.collapsible
-              ? "layers-control collapsible"
-              : "layers-control";
-            layersControl.style.position = "absolute";
-
-            // Set the position correctly - fix position bug by using correct CSS positioning
-            const position = x.layers_control.position || "top-left";
-            if (position === "top-left") {
-              layersControl.style.top =
-                (x.layers_control.margin_top || 10) + "px";
-              layersControl.style.left =
-                (x.layers_control.margin_left || 10) + "px";
-            } else if (position === "top-right") {
-              layersControl.style.top =
-                (x.layers_control.margin_top || 10) + "px";
-              layersControl.style.right =
-                (x.layers_control.margin_right || 10) + "px";
-            } else if (position === "bottom-left") {
-              layersControl.style.bottom =
-                (x.layers_control.margin_bottom || 10) + "px";
-              layersControl.style.left =
-                (x.layers_control.margin_left || 10) + "px";
-            } else if (position === "bottom-right") {
-              layersControl.style.bottom =
-                (x.layers_control.margin_bottom || 40) + "px";
-              layersControl.style.right =
-                (x.layers_control.margin_right || 10) + "px";
+              map.controls.push({ type: "reset", control: resetControlObj });
             }
 
-            // Apply custom colors if provided
-            if (x.layers_control.custom_colors) {
-              const colors = x.layers_control.custom_colors;
-
-              // Create a style element for custom colors
-              const styleEl = document.createElement("style");
-              let css = "";
-
-              if (colors.background) {
-                css += `#${x.layers_control.control_id} { background-color: ${colors.background}; }\n`;
-              }
-
-              if (colors.text) {
-                css += `#${x.layers_control.control_id} a { color: ${colors.text}; }\n`;
-              }
-
-              if (colors.active) {
-                css += `#${x.layers_control.control_id} a.active { background-color: ${colors.active}; }\n`;
-                css += `#${x.layers_control.control_id} .toggle-button { background-color: ${colors.active}; }\n`;
-              }
-
-              if (colors.activeText) {
-                css += `#${x.layers_control.control_id} a.active { color: ${colors.activeText}; }\n`;
-                css += `#${x.layers_control.control_id} .toggle-button { color: ${colors.activeText}; }\n`;
-              }
-
-              if (colors.hover) {
-                css += `#${x.layers_control.control_id} a:hover { background-color: ${colors.hover}; }\n`;
-                css += `#${x.layers_control.control_id} .toggle-button:hover { background-color: ${colors.hover}; }\n`;
-              }
-
-              styleEl.textContent = css;
-              document.head.appendChild(styleEl);
+            if (x.images && Array.isArray(x.images)) {
+              x.images.forEach(async function (imageInfo) {
+                try {
+                  const image = await map.loadImage(imageInfo.url);
+                  if (!map.hasImage(imageInfo.id)) {
+                    map.addImage(imageInfo.id, image.data, imageInfo.options);
+                  }
+                } catch (error) {
+                  console.error("Error loading image:", error);
+                }
+              });
+            } else if (x.images) {
+              console.error("x.images is not an array:", x.images);
             }
 
-            el.appendChild(layersControl);
+            // Add the layers control if provided
+            if (x.layers_control) {
+              const layersControl = document.createElement("div");
+              layersControl.id = x.layers_control.control_id;
+              layersControl.className = x.layers_control.collapsible
+                ? "layers-control collapsible"
+                : "layers-control";
+              layersControl.style.position = "absolute";
 
-            const layersList = document.createElement("div");
-            layersList.className = "layers-list";
-            layersControl.appendChild(layersList);
+              // Set the position correctly - fix position bug by using correct CSS positioning
+              const position = x.layers_control.position || "top-left";
+              if (position === "top-left") {
+                layersControl.style.top =
+                  (x.layers_control.margin_top || 10) + "px";
+                layersControl.style.left =
+                  (x.layers_control.margin_left || 10) + "px";
+              } else if (position === "top-right") {
+                layersControl.style.top =
+                  (x.layers_control.margin_top || 10) + "px";
+                layersControl.style.right =
+                  (x.layers_control.margin_right || 10) + "px";
+              } else if (position === "bottom-left") {
+                layersControl.style.bottom =
+                  (x.layers_control.margin_bottom || 10) + "px";
+                layersControl.style.left =
+                  (x.layers_control.margin_left || 10) + "px";
+              } else if (position === "bottom-right") {
+                layersControl.style.bottom =
+                  (x.layers_control.margin_bottom || 40) + "px";
+                layersControl.style.right =
+                  (x.layers_control.margin_right || 10) + "px";
+              }
 
-            // Fetch layers to be included in the control
-            let layers =
-              x.layers_control.layers ||
-              map.getStyle().layers.map((layer) => layer.id);
-            let layersConfig = x.layers_control.layers_config;
+              // Apply custom colors if provided
+              if (x.layers_control.custom_colors) {
+                const colors = x.layers_control.custom_colors;
 
-            // If we have a layers_config, use that; otherwise fall back to original behavior
-            if (layersConfig && Array.isArray(layersConfig)) {
-              layersConfig.forEach((config, index) => {
-                const link = document.createElement("a");
-                // Ensure config.ids is always an array
-                const layerIds = Array.isArray(config.ids)
-                  ? config.ids
-                  : [config.ids];
-                link.id = layerIds.join("-");
-                link.href = "#";
-                link.textContent = config.label;
-                link.setAttribute("data-layer-ids", JSON.stringify(layerIds));
-                link.setAttribute("data-layer-type", config.type);
+                // Create a style element for custom colors
+                const styleEl = document.createElement("style");
+                let css = "";
 
-                // Check if the first layer's visibility is set to "none" initially
-                const firstLayerId = layerIds[0];
-                const initialVisibility = map.getLayoutProperty(
-                  firstLayerId,
-                  "visibility",
-                );
-                link.className = initialVisibility === "none" ? "" : "active";
-
-                // Also hide any associated legends if the layer is initially hidden
-                if (initialVisibility === "none") {
-                  layerIds.forEach((layerId) => {
-                    const associatedLegends = document.querySelectorAll(
-                      `.mapboxgl-legend[data-layer-id="${layerId}"]`,
-                    );
-                    associatedLegends.forEach((legend) => {
-                      legend.style.display = "none";
-                    });
-                  });
+                if (colors.background) {
+                  css += `#${x.layers_control.control_id} { background-color: ${colors.background}; }\n`;
                 }
 
-                // Show or hide layer(s) when the toggle is clicked
-                link.onclick = function (e) {
-                  e.preventDefault();
-                  e.stopPropagation();
+                if (colors.text) {
+                  css += `#${x.layers_control.control_id} a { color: ${colors.text}; }\n`;
+                }
 
-                  const layerIds = JSON.parse(
-                    this.getAttribute("data-layer-ids"),
-                  );
+                if (colors.active) {
+                  css += `#${x.layers_control.control_id} a.active { background-color: ${colors.active}; }\n`;
+                  css += `#${x.layers_control.control_id} .toggle-button { background-color: ${colors.active}; }\n`;
+                }
+
+                if (colors.activeText) {
+                  css += `#${x.layers_control.control_id} a.active { color: ${colors.activeText}; }\n`;
+                  css += `#${x.layers_control.control_id} .toggle-button { color: ${colors.activeText}; }\n`;
+                }
+
+                if (colors.hover) {
+                  css += `#${x.layers_control.control_id} a:hover { background-color: ${colors.hover}; }\n`;
+                  css += `#${x.layers_control.control_id} .toggle-button:hover { background-color: ${colors.hover}; }\n`;
+                }
+
+                styleEl.textContent = css;
+                document.head.appendChild(styleEl);
+              }
+
+              el.appendChild(layersControl);
+
+              const layersList = document.createElement("div");
+              layersList.className = "layers-list";
+              layersControl.appendChild(layersList);
+
+              // Fetch layers to be included in the control
+              let layers =
+                x.layers_control.layers ||
+                map.getStyle().layers.map((layer) => layer.id);
+              let layersConfig = x.layers_control.layers_config;
+
+              // If we have a layers_config, use that; otherwise fall back to original behavior
+              if (layersConfig && Array.isArray(layersConfig)) {
+                layersConfig.forEach((config, index) => {
+                  const link = document.createElement("a");
+                  // Ensure config.ids is always an array
+                  const layerIds = Array.isArray(config.ids)
+                    ? config.ids
+                    : [config.ids];
+                  link.id = layerIds.join("-");
+                  link.href = "#";
+                  link.textContent = config.label;
+                  link.setAttribute("data-layer-ids", JSON.stringify(layerIds));
+                  link.setAttribute("data-layer-type", config.type);
+
+                  // Check if the first layer's visibility is set to "none" initially
                   const firstLayerId = layerIds[0];
-                  const visibility = map.getLayoutProperty(
+                  const initialVisibility = map.getLayoutProperty(
                     firstLayerId,
                     "visibility",
                   );
+                  link.className = initialVisibility === "none" ? "" : "active";
 
-                  // Toggle visibility for all layer IDs in the group
-                  if (visibility === "visible") {
+                  // Also hide any associated legends if the layer is initially hidden
+                  if (initialVisibility === "none") {
                     layerIds.forEach((layerId) => {
-                      map.setLayoutProperty(layerId, "visibility", "none");
-                      // Hide associated legends
                       const associatedLegends = document.querySelectorAll(
                         `.mapboxgl-legend[data-layer-id="${layerId}"]`,
                       );
@@ -2199,128 +2248,156 @@ HTMLWidgets.widget({
                         legend.style.display = "none";
                       });
                     });
-                    this.className = "";
-                  } else {
-                    layerIds.forEach((layerId) => {
-                      map.setLayoutProperty(layerId, "visibility", "visible");
-                      // Show associated legends
-                      const associatedLegends = document.querySelectorAll(
-                        `.mapboxgl-legend[data-layer-id="${layerId}"]`,
-                      );
-                      associatedLegends.forEach((legend) => {
-                        legend.style.display = "";
-                      });
-                    });
-                    this.className = "active";
                   }
-                };
 
-                layersList.appendChild(link);
-              });
-            } else {
-              // Fallback to original behavior for simple layer arrays
-              // Ensure layers is always an array
-              if (!Array.isArray(layers)) {
-                layers = [layers];
-              }
+                  // Show or hide layer(s) when the toggle is clicked
+                  link.onclick = function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
 
-              layers.forEach((layerId, index) => {
-                const link = document.createElement("a");
-                link.id = layerId;
-                link.href = "#";
-                link.textContent = layerId;
+                    const layerIds = JSON.parse(
+                      this.getAttribute("data-layer-ids"),
+                    );
+                    const firstLayerId = layerIds[0];
+                    const visibility = map.getLayoutProperty(
+                      firstLayerId,
+                      "visibility",
+                    );
 
-                // Check if the layer visibility is set to "none" initially
-                const initialVisibility = map.getLayoutProperty(
-                  layerId,
-                  "visibility",
-                );
-                link.className = initialVisibility === "none" ? "" : "active";
+                    // Toggle visibility for all layer IDs in the group
+                    if (visibility === "visible") {
+                      layerIds.forEach((layerId) => {
+                        map.setLayoutProperty(layerId, "visibility", "none");
+                        // Hide associated legends
+                        const associatedLegends = document.querySelectorAll(
+                          `.mapboxgl-legend[data-layer-id="${layerId}"]`,
+                        );
+                        associatedLegends.forEach((legend) => {
+                          legend.style.display = "none";
+                        });
+                      });
+                      this.className = "";
+                    } else {
+                      layerIds.forEach((layerId) => {
+                        map.setLayoutProperty(layerId, "visibility", "visible");
+                        // Show associated legends
+                        const associatedLegends = document.querySelectorAll(
+                          `.mapboxgl-legend[data-layer-id="${layerId}"]`,
+                        );
+                        associatedLegends.forEach((legend) => {
+                          legend.style.display = "";
+                        });
+                      });
+                      this.className = "active";
+                    }
+                  };
 
-                // Also hide any associated legends if the layer is initially hidden
-                if (initialVisibility === "none") {
-                  const associatedLegends = document.querySelectorAll(
-                    `.mapboxgl-legend[data-layer-id="${layerId}"]`,
-                  );
-                  associatedLegends.forEach((legend) => {
-                    legend.style.display = "none";
-                  });
+                  layersList.appendChild(link);
+                });
+              } else {
+                // Fallback to original behavior for simple layer arrays
+                // Ensure layers is always an array
+                if (!Array.isArray(layers)) {
+                  layers = [layers];
                 }
 
-                // Show or hide layer when the toggle is clicked
-                link.onclick = function (e) {
-                  const clickedLayer = this.textContent;
-                  e.preventDefault();
-                  e.stopPropagation();
+                layers.forEach((layerId, index) => {
+                  const link = document.createElement("a");
+                  link.id = layerId;
+                  link.href = "#";
+                  link.textContent = layerId;
 
-                  const visibility = map.getLayoutProperty(
-                    clickedLayer,
+                  // Check if the layer visibility is set to "none" initially
+                  const initialVisibility = map.getLayoutProperty(
+                    layerId,
                     "visibility",
                   );
+                  link.className = initialVisibility === "none" ? "" : "active";
 
-                  // Toggle layer visibility by changing the layout object's visibility property
-                  if (visibility === "visible") {
-                    map.setLayoutProperty(clickedLayer, "visibility", "none");
-                    this.className = "";
-
-                    // Hide associated legends
+                  // Also hide any associated legends if the layer is initially hidden
+                  if (initialVisibility === "none") {
                     const associatedLegends = document.querySelectorAll(
-                      `.mapboxgl-legend[data-layer-id="${clickedLayer}"]`,
+                      `.mapboxgl-legend[data-layer-id="${layerId}"]`,
                     );
                     associatedLegends.forEach((legend) => {
                       legend.style.display = "none";
                     });
-                  } else {
-                    this.className = "active";
-                    map.setLayoutProperty(
+                  }
+
+                  // Show or hide layer when the toggle is clicked
+                  link.onclick = function (e) {
+                    const clickedLayer = this.textContent;
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    const visibility = map.getLayoutProperty(
                       clickedLayer,
                       "visibility",
-                      "visible",
                     );
 
-                    // Show associated legends
-                    const associatedLegends = document.querySelectorAll(
-                      `.mapboxgl-legend[data-layer-id="${clickedLayer}"]`,
-                    );
-                    associatedLegends.forEach((legend) => {
-                      legend.style.display = "";
-                    });
-                  }
-                };
+                    // Toggle layer visibility by changing the layout object's visibility property
+                    if (visibility === "visible") {
+                      map.setLayoutProperty(clickedLayer, "visibility", "none");
+                      this.className = "";
 
-                layersList.appendChild(link);
-              });
-            }
+                      // Hide associated legends
+                      const associatedLegends = document.querySelectorAll(
+                        `.mapboxgl-legend[data-layer-id="${clickedLayer}"]`,
+                      );
+                      associatedLegends.forEach((legend) => {
+                        legend.style.display = "none";
+                      });
+                    } else {
+                      this.className = "active";
+                      map.setLayoutProperty(
+                        clickedLayer,
+                        "visibility",
+                        "visible",
+                      );
 
-            // Handle collapsible behavior
-            if (x.layers_control.collapsible) {
-              const toggleButton = document.createElement("div");
-              toggleButton.className = "toggle-button";
+                      // Show associated legends
+                      const associatedLegends = document.querySelectorAll(
+                        `.mapboxgl-legend[data-layer-id="${clickedLayer}"]`,
+                      );
+                      associatedLegends.forEach((legend) => {
+                        legend.style.display = "";
+                      });
+                    }
+                  };
 
-              // Use stacked layers icon instead of text if requested
-              if (x.layers_control.use_icon) {
-                // Add icon-only class to the control for compact styling
-                layersControl.classList.add("icon-only");
+                  layersList.appendChild(link);
+                });
+              }
 
-                // More GIS-like layers stack icon
-                toggleButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              // Handle collapsible behavior
+              if (x.layers_control.collapsible) {
+                const toggleButton = document.createElement("div");
+                toggleButton.className = "toggle-button";
+
+                // Use stacked layers icon instead of text if requested
+                if (x.layers_control.use_icon) {
+                  // Add icon-only class to the control for compact styling
+                  layersControl.classList.add("icon-only");
+
+                  // More GIS-like layers stack icon
+                  toggleButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
                                     <polyline points="2 17 12 22 22 17"></polyline>
                                     <polyline points="2 12 12 17 22 12"></polyline>
                                 </svg>`;
-                toggleButton.style.display = "flex";
-                toggleButton.style.alignItems = "center";
-                toggleButton.style.justifyContent = "center";
-              } else {
-                toggleButton.textContent = "Layers";
-              }
+                  toggleButton.style.display = "flex";
+                  toggleButton.style.alignItems = "center";
+                  toggleButton.style.justifyContent = "center";
+                } else {
+                  toggleButton.textContent = "Layers";
+                }
 
-              toggleButton.onclick = function () {
-                layersControl.classList.toggle("open");
-              };
-              layersControl.insertBefore(toggleButton, layersList);
+                toggleButton.onclick = function () {
+                  layersControl.classList.toggle("open");
+                };
+                layersControl.insertBefore(toggleButton, layersList);
+              }
             }
-          }
 
             // Mark initial style as loaded to prevent control duplication on subsequent set_style() calls
             map._initialStyleLoaded = true;
@@ -2399,12 +2476,12 @@ HTMLWidgets.widget({
                 if (x.hover_events.features) {
                   const options = x.hover_events.layer_id
                     ? {
-                        layers: Array.isArray(x.hover_events.layer_id)
-                          ? x.hover_events.layer_id
-                          : x.hover_events.layer_id
-                              .split(",")
-                              .map((id) => id.trim()),
-                      }
+                      layers: Array.isArray(x.hover_events.layer_id)
+                        ? x.hover_events.layer_id
+                        : x.hover_events.layer_id
+                          .split(",")
+                          .map((id) => id.trim()),
+                    }
                     : undefined;
                   const features = map.queryRenderedFeatures(e.point, options);
 
@@ -3599,7 +3676,7 @@ if (HTMLWidgets.shinyMode) {
 
           };
 
-          map.once("style.load", function() {
+          map.once("style.load", function () {
             // Wait for map to be fully idle before adding layers
             map.once("idle", onStyleLoad);
           });
@@ -4922,9 +4999,8 @@ if (HTMLWidgets.shinyMode) {
             forwardGeocode: async (config) => {
               const features = [];
               try {
-                const request = `https://nominatim.openstreetmap.org/search?q=${
-                  config.query
-                }&format=geojson&polygon_geojson=1&addressdetails=1`;
+                const request = `https://nominatim.openstreetmap.org/search?q=${config.query
+                  }&format=geojson&polygon_geojson=1&addressdetails=1`;
                 const response = await fetch(request);
                 const geojson = await response.json();
                 for (const feature of geojson.features) {

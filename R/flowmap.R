@@ -31,6 +31,9 @@
 #' @param adaptive_scales_enabled Whether to use adaptive scaling. Default is TRUE.
 #' @param highlight_color Color for highlighting on hover. Default is "orange".
 #' @param max_top_flows Maximum number of top flows to display. Default is 5000.
+#' @param opacity Overall opacity of the flowmap layer (0-1). Default is 1.0.
+#' @param clustering_method Clustering algorithm to use. Either "HCA" (Hierarchical Cluster Analysis) or "H3" (H3 hexagonal hierarchical spatial index). Default is "HCA".
+#' @param show_settings_menu Whether to display an interactive settings menu on the map for real-time customization. Useful for exploring different visual configurations. Default is FALSE.
 #' @param popup A column name from locations or flows to display in a popup on click.
 #' @param tooltip A column name from locations or flows to display in a tooltip on hover.
 #'
@@ -89,6 +92,9 @@ add_flowmap <- function(
   adaptive_scales_enabled = TRUE,
   highlight_color = "orange",
   max_top_flows = 5000,
+  opacity = 1.0,
+  clustering_method = "HCA",
+  show_settings_menu = FALSE,
   popup = NULL,
   tooltip = NULL
 ) {
@@ -99,6 +105,75 @@ add_flowmap <- function(
 
   if (!is.data.frame(flows)) {
     stop("flows must be a data.frame")
+  }
+
+  # Validate opacity
+  if (!is.numeric(opacity) || opacity < 0 || opacity > 1) {
+    stop("opacity must be a number between 0 and 1")
+  }
+
+  # Validate clustering_method
+  if (!clustering_method %in% c("HCA", "H3")) {
+    stop("clustering_method must be either 'HCA' or 'H3'")
+  }
+
+  # Validate color_scheme if string
+  if (is.character(color_scheme) && length(color_scheme) == 1) {
+    valid_schemes <- c(
+      "Blues",
+      "BluGrn",
+      "BluYl",
+      "BrwnYl",
+      "BuGn",
+      "BuPu",
+      "Burg",
+      "BurgYl",
+      "Cool",
+      "DarkMint",
+      "Emrld",
+      "GnBu",
+      "Grayish",
+      "Greens",
+      "Greys",
+      "Inferno",
+      "Magenta",
+      "Magma",
+      "Mint",
+      "Oranges",
+      "OrRd",
+      "OrYel",
+      "Peach",
+      "Plasma",
+      "PinkYl",
+      "PuBu",
+      "PuBuGn",
+      "PuRd",
+      "Purp",
+      "Purples",
+      "PurpOr",
+      "RdPu",
+      "RedOr",
+      "Reds",
+      "Sunset",
+      "SunsetDark",
+      "Teal",
+      "TealGrn",
+      "Viridis",
+      "Warm",
+      "YlGn",
+      "YlGnBu",
+      "YlOrBr",
+      "YlOrRd"
+    )
+    if (!color_scheme %in% valid_schemes) {
+      warning(
+        "Unknown color scheme '",
+        color_scheme,
+        "'. ",
+        "Valid schemes are: ",
+        paste(valid_schemes, collapse = ", ")
+      )
+    }
   }
 
   # Process locations data
@@ -174,6 +249,7 @@ add_flowmap <- function(
     settings = list(
       colorScheme = color_scheme,
       darkMode = dark_mode,
+      opacity = opacity,
       animationEnabled = animation_enabled,
       fadeEnabled = fade_enabled,
       fadeAmount = fade_amount,
@@ -183,10 +259,12 @@ add_flowmap <- function(
       locationLabelsEnabled = location_labels_enabled,
       clusteringEnabled = clustering_enabled,
       clusteringAuto = clustering_auto,
+      clusteringMethod = clustering_method,
       adaptiveScalesEnabled = adaptive_scales_enabled,
       highlightColor = highlight_color,
       maxTopFlowsDisplayNum = max_top_flows
     ),
+    showSettingsMenu = show_settings_menu,
     popup = popup,
     tooltip = tooltip
   )
