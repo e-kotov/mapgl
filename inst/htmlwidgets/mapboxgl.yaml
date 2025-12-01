@@ -63,3 +63,8 @@ dependencies:
     src: "htmlwidgets"
     script:
       - "turf-operations.js"
+  - name: flowmap-gl
+    version: "8.0.2"
+    src: "htmlwidgets/lib/flowmap-gl"
+    script:
+      - "flowmap-gl-bundle.min.js"

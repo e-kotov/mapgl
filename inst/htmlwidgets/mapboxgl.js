@@ -1196,6 +1196,111 @@ HTMLWidgets.widget({
             });
           }
 
+          // Initialize flowmap layers if provided
+          if (x.flowmaps && x.flowmaps.length > 0) {
+            // Check if FlowmapGL is available
+            if (typeof FlowmapGL === "undefined") {
+              console.error("FlowmapGL library is not loaded. Cannot add flowmap layers.");
+            } else {
+              // Initialize deck.gl overlay if not already created
+              if (!map._deckOverlay) {
+                try {
+                  const { MapboxOverlay } = FlowmapGL;
+
+                  // Create MapboxOverlay - use interleaved: false to render on top
+                  map._deckOverlay = new MapboxOverlay({
+                    interleaved: false,
+                    layers: []
+                  });
+
+                  // Add the overlay to the map
+                  map.addControl(map._deckOverlay);
+
+                  console.log("Deck.gl MapboxOverlay initialized");
+                } catch (error) {
+                  console.error("Failed to initialize MapboxOverlay:", error);
+                  return;
+                }
+              }
+
+              // Collect all flowmap layers
+              const flowmapLayers = [];
+
+              x.flowmaps.forEach(function (flowmapConfig) {
+                try {
+                  const { FlowmapLayer } = FlowmapGL;
+
+                  // Create FlowmapLayer instance
+                  const flowmapLayer = new FlowmapLayer({
+                    id: flowmapConfig.id,
+                    data: flowmapConfig.data,
+                    pickable: true,
+                    // Data accessors
+                    getLocationId: (loc) => loc.id,
+                    getLocationLat: (loc) => loc.lat,
+                    getLocationLon: (loc) => loc.lon,
+                    getLocationName: (loc) => loc.name,
+                    getFlowOriginId: (flow) => flow.origin,
+                    getFlowDestId: (flow) => flow.dest,
+                    getFlowMagnitude: (flow) => flow.count,
+                    // Settings from R
+                    colorScheme: flowmapConfig.settings.colorScheme,
+                    darkMode: flowmapConfig.settings.darkMode,
+                    animationEnabled: flowmapConfig.settings.animationEnabled,
+                    fadeEnabled: flowmapConfig.settings.fadeEnabled,
+                    fadeAmount: flowmapConfig.settings.fadeAmount,
+                    fadeOpacityEnabled: flowmapConfig.settings.fadeOpacityEnabled,
+                    locationsEnabled: flowmapConfig.settings.locationsEnabled,
+                    locationTotalsEnabled: flowmapConfig.settings.locationTotalsEnabled,
+                    locationLabelsEnabled: flowmapConfig.settings.locationLabelsEnabled,
+                    clusteringEnabled: flowmapConfig.settings.clusteringEnabled,
+                    clusteringAuto: flowmapConfig.settings.clusteringAuto,
+                    clusteringLevel: flowmapConfig.settings.clusteringLevel,
+                    adaptiveScalesEnabled: flowmapConfig.settings.adaptiveScalesEnabled,
+                    highlightColor: flowmapConfig.settings.highlightColor,
+                    maxTopFlowsDisplayNum: flowmapConfig.settings.maxTopFlowsDisplayNum,
+                    // Event handlers for popups/tooltips
+                    onHover: (info) => {
+                      if (flowmapConfig.tooltip && info && info.object) {
+                        // TODO: Implement tooltip display
+                        console.log("Flowmap hover:", info.object);
+                      }
+                    },
+                    onClick: (info) => {
+                      if (flowmapConfig.popup && info && info.object) {
+                        // TODO: Implement popup display
+                        console.log("Flowmap click:", info.object);
+                      }
+                      // Send to Shiny if in Shiny mode
+                      if (HTMLWidgets.shinyMode && info && info.object) {
+                        Shiny.setInputValue(el.id + "_flowmap_click", {
+                          id: flowmapConfig.id,
+                          type: info.object.type,
+                          data: info.object
+                        });
+                      }
+                    }
+                  });
+
+                  flowmapLayers.push(flowmapLayer);
+                  console.log("Flowmap layer '" + flowmapConfig.id + "' created successfully");
+                } catch (error) {
+                  console.error("Failed to create flowmap layer '" + flowmapConfig.id + "':", error);
+                }
+              });
+
+              // Update overlay with all flowmap layers
+              if (flowmapLayers.length > 0 && map._deckOverlay) {
+                try {
+                  map._deckOverlay.setProps({ layers: flowmapLayers });
+                  console.log("Flowmap layers added to MapboxOverlay:", flowmapLayers.length);
+                } catch (error) {
+                  console.error("Failed to set flowmap layers on overlay:", error);
+                }
+              }
+            }
+          }
+
           // Set terrain if provided
           if (x.terrain) {
             map.setTerrain({
