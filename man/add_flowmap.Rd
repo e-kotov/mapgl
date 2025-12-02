@@ -25,6 +25,7 @@ add_flowmap(
   highlight_color = "#ff9b29",
   max_top_flows = 5000,
   opacity = 1,
+  outline_width = 0,
   clustering_method = "HCA",
   show_settings_menu = FALSE,
   dim_basemap = FALSE,

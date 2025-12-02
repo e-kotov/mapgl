@@ -93,7 +93,8 @@ add_flowmap <- function(
   adaptive_scales_enabled = TRUE,
   highlight_color = "#ff9b29",
   max_top_flows = 5000,
-  opacity = 1.0,
+  opacity = 1,
+  outline_width = 0,
   clustering_method = "HCA",
   show_settings_menu = FALSE,
   dim_basemap = FALSE,
@@ -240,10 +241,18 @@ add_flowmap <- function(
   }
 
   # Check for NA values
-  if (any(is.na(locations_df$id)) || any(is.na(locations_df$lat)) || any(is.na(locations_df$lon))) {
+  if (
+    any(is.na(locations_df$id)) ||
+      any(is.na(locations_df$lat)) ||
+      any(is.na(locations_df$lon))
+  ) {
     stop("locations contains NA values in required columns (id, lat, lon)")
   }
-  if (any(is.na(flows$origin)) || any(is.na(flows$dest)) || any(is.na(flows$count))) {
+  if (
+    any(is.na(flows$origin)) ||
+      any(is.na(flows$dest)) ||
+      any(is.na(flows$count))
+  ) {
     stop("flows contains NA values in required columns (origin, dest, count)")
   }
 
@@ -282,21 +291,34 @@ add_flowmap <- function(
   # Select only required columns for locations
   locations_cols <- c("id", "lat", "lon", "name")
   # Include additional columns if they exist and might be used for popup/tooltip
-  if (!is.null(popup) && popup %in% names(locations_df) && !popup %in% locations_cols) {
+  if (
+    !is.null(popup) &&
+      popup %in% names(locations_df) &&
+      !popup %in% locations_cols
+  ) {
     locations_cols <- c(locations_cols, popup)
   }
-  if (!is.null(tooltip) && tooltip %in% names(locations_df) && !tooltip %in% locations_cols) {
+  if (
+    !is.null(tooltip) &&
+      tooltip %in% names(locations_df) &&
+      !tooltip %in% locations_cols
+  ) {
     locations_cols <- c(locations_cols, tooltip)
   }
   # Ensure clean data.frame (not sf or tibble)
-  locations_subset <- as.data.frame(locations_df[, locations_cols, drop = FALSE])
+  locations_subset <- as.data.frame(locations_df[,
+    locations_cols,
+    drop = FALSE
+  ])
 
   # Select only required columns for flows
   flows_cols <- c("origin", "dest", "count")
   if (!is.null(popup) && popup %in% names(flows) && !popup %in% flows_cols) {
     flows_cols <- c(flows_cols, popup)
   }
-  if (!is.null(tooltip) && tooltip %in% names(flows) && !tooltip %in% flows_cols) {
+  if (
+    !is.null(tooltip) && tooltip %in% names(flows) && !tooltip %in% flows_cols
+  ) {
     flows_cols <- c(flows_cols, tooltip)
   }
   # Ensure clean data.frame
@@ -313,6 +335,7 @@ add_flowmap <- function(
       colorScheme = color_scheme,
       darkMode = dark_mode,
       opacity = opacity,
+      outlineWidth = outline_width,
       animationEnabled = animation_enabled,
       fadeEnabled = fade_enabled,
       fadeAmount = fade_amount,

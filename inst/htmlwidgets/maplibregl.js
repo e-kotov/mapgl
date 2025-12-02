@@ -757,12 +757,28 @@ HTMLWidgets.widget({
               isolation: auto !important;
             }
             
+            /* CRITICAL FIX: Remove stacking context from control container 
+               so mix-blend-mode can penetrate to the map canvas */
+            .mapboxgl-control-container, 
+            .maplibregl-control-container {
+                z-index: auto !important;
+            }
+
+            /* Ensure the map controls themselves stay usable/visible 
+               by giving them a local z-index */
+            .mapboxgl-ctrl-top-left, .mapboxgl-ctrl-top-right, 
+            .mapboxgl-ctrl-bottom-left, .mapboxgl-ctrl-bottom-right,
+            .maplibregl-ctrl-top-left, .maplibregl-ctrl-top-right, 
+            .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right {
+                z-index: 1 !important;
+            }
+            
             /* Target the specifically tagged deck canvas */
             .flowmap-dark-mode .flowmap-overlay-canvas {
               mix-blend-mode: screen !important;
             }
             .flowmap-light-mode .flowmap-overlay-canvas {
-              mix-blend-mode: multiply !important;
+              mix-blend-mode: darken !important;
             }
 
             /* Dimming for Dark Mode */
@@ -1308,6 +1324,7 @@ HTMLWidgets.widget({
                     data: flowmapConfig.data,
                     pickable: true,
                     opacity: settings.opacity !== undefined ? settings.opacity : 1.0,
+                    outlineWidth: settings.outlineWidth !== undefined ? settings.outlineWidth : 0,
                     // Data accessors
                     getLocationId: (loc) => loc.id,
                     getLocationLat: (loc) => loc.lat,
@@ -1360,11 +1377,12 @@ HTMLWidgets.widget({
                       tooltip.style.top = info.y + 'px';
 
                       // Generate tooltip content based on object type
-                      const { PickingType } = FlowmapGL;
                       let content = '';
 
+                      // Use string comparison for type checking instead of PickingType enum
+                      // The type is already a string on the object
                       switch (info.object.type) {
-                        case PickingType.LOCATION:
+                        case 'location':
                           content = `
                             <div><strong>${info.object.name || info.object.id}</strong></div>
                             ${info.object.totals ? `
@@ -1374,7 +1392,7 @@ HTMLWidgets.widget({
                             ` : ''}
                           `;
                           break;
-                        case PickingType.FLOW:
+                        case 'flow':
                           content = `
                             <div><strong>${info.object.origin.id} → ${info.object.dest.id}</strong></div>
                             <div>Count: ${info.object.count}</div>
@@ -1409,7 +1427,9 @@ HTMLWidgets.widget({
                   console.log("Flowmap layer '" + flowmapConfig.id + "' created successfully");
 
                   // Helper to update deck.gl canvas blending via CSS classes and direct tagging
-                  const updateDeckEffects = (darkMode, attempt = 1) => {
+                  const updateDeckEffects = (darkMode, mixBlendMode = 'auto', attempt = 1) => {
+                    console.log(`[MapGL updateDeckEffects] Attempt ${attempt}, darkMode: ${darkMode}, mixBlendMode: ${mixBlendMode}`);
+
                     const container = map.getContainer();
 
                     // Toggle container classes for context
@@ -1430,41 +1450,64 @@ HTMLWidgets.widget({
                       container.classList.remove('flowmap-dim-basemap');
                     }
 
-                    // Find and tag the deck canvas
+                    // Find and tag the deck canvas AND its container
                     let deckCanvas = null;
+                    let deckContainer = null;
                     const allCanvases = document.querySelectorAll('canvas');
+                    console.log(`[MapGL updateDeckEffects] Found ${allCanvases.length} total canvas elements`);
 
                     for (let i = 0; i < allCanvases.length; i++) {
                       const cvs = allCanvases[i];
-                      // Exclude base map canvases
-                      if (!cvs.classList.contains('mapboxgl-canvas') &&
-                        !cvs.classList.contains('maplibregl-canvas')) {
+                      const isMapbox = cvs.classList.contains('mapboxgl-canvas');
+                      const isMaplibre = cvs.classList.contains('maplibregl-canvas');
+                      const rect = cvs.getBoundingClientRect();
 
+                      console.log(`[MapGL updateDeckEffects] Canvas ${i}: mapbox=${isMapbox}, maplibre=${isMaplibre}, size=${rect.width}x${rect.height}`);
+
+                      // Exclude base map canvases
+                      if (!isMapbox && !isMaplibre) {
                         // Heuristic: Must be visible and have size
-                        const rect = cvs.getBoundingClientRect();
                         if (rect.width > 10 && rect.height > 10) {
                           deckCanvas = cvs;
+                          // Get the parent container - deck.gl wraps canvas in a div
+                          deckContainer = cvs.parentElement;
+                          console.log(`[MapGL updateDeckEffects] ✓ Found deck.gl canvas at index ${i}`);
+                          console.log(`[MapGL updateDeckEffects] ✓ Deck container element:`, deckContainer);
                           break;
                         }
                       }
                     }
 
-                    if (deckCanvas) {
+                    if (deckCanvas && deckContainer) {
                       deckCanvas.classList.add('flowmap-overlay-canvas');
-                      // Also force style directly as backup
-                      deckCanvas.style.mixBlendMode = darkMode ? 'screen' : 'multiply';
-                      console.log("[MapGL] Tagged and styled deck canvas:", deckCanvas);
+
+                      // Determine blend mode
+                      let blendMode;
+                      if (mixBlendMode === 'auto') {
+                        blendMode = darkMode ? 'screen' : 'darken';
+                      } else {
+                        blendMode = mixBlendMode;
+                      }
+
+                      // Apply blend mode to CONTAINER (like React example), not just canvas
+                      deckContainer.style.setProperty('mix-blend-mode', blendMode, 'important');
+
+                      console.log(`[MapGL updateDeckEffects] ✓ Applied mixBlendMode: ${blendMode} to deck CONTAINER with !important`);
+                      console.log(`[MapGL updateDeckEffects] Container element tag: ${deckContainer.tagName}`);
+                      console.log(`[MapGL updateDeckEffects] Container style.mixBlendMode: ${deckContainer.style.mixBlendMode}`);
+                      console.log(`[MapGL updateDeckEffects] Container computed style:`, window.getComputedStyle(deckContainer).mixBlendMode);
                     } else {
                       if (attempt < 20) {
-                        setTimeout(() => updateDeckEffects(darkMode, attempt + 1), 250);
+                        console.log(`[MapGL updateDeckEffects] ⚠ Deck canvas not found, retrying in 250ms...`);
+                        setTimeout(() => updateDeckEffects(darkMode, mixBlendMode, attempt + 1), 250);
                       } else {
-                        console.warn("[MapGL] Failed to find deck canvas to tag.");
+                        console.error(`[MapGL updateDeckEffects] ✗ Failed to find deck canvas after ${attempt} attempts`);
                       }
                     }
                   };
 
                   // Initial call
-                  updateDeckEffects(flowmapConfig.settings.darkMode);
+                  updateDeckEffects(flowmapConfig.settings.darkMode, flowmapConfig.settings.mixBlendMode || 'auto');
 
                   // Create settings menu if requested
                   if (flowmapConfig.showSettingsMenu && typeof FlowmapSettings !== 'undefined') {
@@ -1478,58 +1521,22 @@ HTMLWidgets.widget({
                       function () {
                         // Callback when settings change
                         const newState = guiInstance.getState();
+                        console.log('[MapGL Settings Change]', newState);
 
-                        // Update blending mode
-                        const updateDeckEffects = (darkMode, attempt = 1) => {
-                          const container = map.getContainer();
-
-                          // Toggle container classes for context
-                          if (darkMode) {
-                            container.classList.add('flowmap-dark-mode');
-                            container.classList.remove('flowmap-light-mode');
-                            container.style.backgroundColor = '#000';
-                          } else {
-                            container.classList.add('flowmap-light-mode');
-                            container.classList.remove('flowmap-dark-mode');
-                            container.style.backgroundColor = '#fff';
-                          }
-
-                          // Find and tag the deck canvas
-                          let deckCanvas = null;
-                          const allCanvases = document.querySelectorAll('canvas');
-
-                          for (let i = 0; i < allCanvases.length; i++) {
-                            const cvs = allCanvases[i];
-                            // Exclude base map canvases
-                            if (!cvs.classList.contains('mapboxgl-canvas') &&
-                              !cvs.classList.contains('maplibregl-canvas')) {
-
-                              // Heuristic: Must be visible and have size
-                              const rect = cvs.getBoundingClientRect();
-                              if (rect.width > 10 && rect.height > 10) {
-                                deckCanvas = cvs;
-                                break;
-                              }
-                            }
-                          }
-
-                          if (deckCanvas) {
-                            deckCanvas.classList.add('flowmap-overlay-canvas');
-                            // Also force style directly as backup
-                            deckCanvas.style.mixBlendMode = darkMode ? 'screen' : 'multiply';
-                            console.log("[MapGL] Tagged and styled deck canvas:", deckCanvas);
-                          } else {
-                            if (attempt < 20) {
-                              setTimeout(() => updateDeckEffects(darkMode, attempt + 1), 250);
-                            } else {
-                              console.warn("[MapGL] Failed to find deck canvas to tag.");
-                            }
-                          }
-                        };
-                        updateDeckEffects(newState.darkMode);
+                        // Update blending mode using outer scope function
+                        updateDeckEffects(newState.darkMode, newState.mixBlendMode || 'auto');
 
                         // Create new layer with updated settings
-                        const updatedLayer = new FlowmapLayer(getLayerProps(newState));
+                        const layerProps = getLayerProps(newState);
+                        console.log('[MapGL Settings Change] Creating new FlowmapLayer with props:', {
+                          id: layerProps.id,
+                          darkMode: layerProps.darkMode,
+                          colorScheme: layerProps.colorScheme,
+                          opacity: layerProps.opacity,
+                          animationEnabled: layerProps.animationEnabled
+                        });
+                        const updatedLayer = new FlowmapLayer(layerProps);
+                        console.log('[MapGL Settings Change] New FlowmapLayer created:', updatedLayer);
 
                         // Update deck overlay with new layer
                         if (map._deckOverlay) {
@@ -1538,6 +1545,7 @@ HTMLWidgets.widget({
 
                           // Replace the layer in our cache
                           const index = map._flowmapLayers.findIndex(l => l.id === flowmapConfig.id);
+                          console.log('[MapGL Settings Change] Replacing layer at index:', index);
                           if (index !== -1) {
                             map._flowmapLayers[index] = updatedLayer;
                           } else {
@@ -1545,9 +1553,13 @@ HTMLWidgets.widget({
                           }
 
                           // Update the overlay
+                          console.log('[MapGL Settings Change] Updating deck overlay with layers:', map._flowmapLayers.length);
                           map._deckOverlay.setProps({
                             layers: [...map._flowmapLayers]
                           });
+                          console.log('[MapGL Settings Change] ✓ Deck overlay updated');
+                        } else {
+                          console.error('[MapGL Settings Change] ✗ No deck overlay found!');
                         }
                       }
                     );
