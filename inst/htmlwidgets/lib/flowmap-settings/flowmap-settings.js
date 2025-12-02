@@ -39,7 +39,6 @@
         colorScheme: initialSettings.colorScheme || 'Teal',
         highlightColor: initialSettings.highlightColor || '#ff9b29',
         opacity: initialSettings.opacity !== undefined ? initialSettings.opacity : 1.0,
-        mixBlendMode: initialSettings.mixBlendMode || 'auto', // 'auto' means dark mode uses 'screen', light mode uses 'darken'
         fadeEnabled: initialSettings.fadeEnabled !== undefined ? initialSettings.fadeEnabled : true,
         fadeOpacityEnabled: initialSettings.fadeOpacityEnabled !== undefined ? initialSettings.fadeOpacityEnabled : false,
         fadeAmount: initialSettings.fadeAmount !== undefined ? initialSettings.fadeAmount : 50,
@@ -60,7 +59,6 @@
       gui.add(state, 'colorScheme', COLOR_SCHEMES).onChange(onSettingsChange);
       gui.addColor(state, 'highlightColor').onChange(onSettingsChange);
       gui.add(state, 'opacity', 0.0, 1.0).onChange(onSettingsChange);
-      gui.add(state, 'mixBlendMode', ['auto', 'normal', 'multiply', 'screen', 'darken', 'lighten', 'overlay', 'color-dodge', 'color-burn']).onChange(onSettingsChange);
       gui.add(state, 'animationEnabled').onChange(onSettingsChange);
       gui.add(state, 'adaptiveScalesEnabled').onChange(onSettingsChange);
       gui.add(state, 'locationsEnabled').onChange(onSettingsChange);

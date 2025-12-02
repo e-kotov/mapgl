@@ -773,13 +773,9 @@ HTMLWidgets.widget({
                 z-index: 1 !important;
             }
             
-            /* Target the specifically tagged deck canvas */
-            .flowmap-dark-mode .flowmap-overlay-canvas {
-              mix-blend-mode: screen !important;
-            }
-            .flowmap-light-mode .flowmap-overlay-canvas {
-              mix-blend-mode: darken !important;
-            }
+            /* Blend mode is now applied dynamically via JavaScript updateDeckEffects()
+               to allow runtime changes via settings menu. The static CSS rules were
+               interfering with dynamic updates. */
 
             /* Dimming for Dark Mode */
             .flowmap-dark-mode.flowmap-dim-basemap .mapboxgl-canvas,
@@ -1266,9 +1262,10 @@ HTMLWidgets.widget({
                 try {
                   const { MapboxOverlay } = FlowmapGL;
 
-                  // Create MapboxOverlay - use interleaved: false to render on top
+                  // Create MapboxOverlay with interleaved rendering
+                  // This allows WebGL blend parameters to work correctly
                   map._deckOverlay = new MapboxOverlay({
-                    interleaved: false,
+                    interleaved: true,
                     layers: []
                   });
 
@@ -1319,12 +1316,28 @@ HTMLWidgets.widget({
                   flowmapConfig.data.flows = flows;
 
                   // Common props function
+                  // WebGL constants for blend mode
+                  const GL = {
+                    SRC_ALPHA: 770,
+                    ONE_MINUS_DST_COLOR: 775,
+                    FUNC_ADD: 32774
+                  };
+
                   const getLayerProps = (settings) => ({
                     id: flowmapConfig.id,
                     data: flowmapConfig.data,
                     pickable: true,
                     opacity: settings.opacity !== undefined ? settings.opacity : 1.0,
                     outlineWidth: settings.outlineWidth !== undefined ? settings.outlineWidth : 0,
+                    // WebGL blend parameters for proper blend mode
+                    // Dark mode: [SRC_ALPHA, ONE_MINUS_DST_COLOR] creates additive glow effect
+                    // Light mode: Not yet supported (needs different blend function)
+                    parameters: settings.darkMode ? {
+                      blend: true,
+                      blendFunc: [GL.SRC_ALPHA, GL.ONE_MINUS_DST_COLOR],
+                      blendEquation: GL.FUNC_ADD,
+                      depthTest: false
+                    } : undefined,
                     // Data accessors
                     getLocationId: (loc) => loc.id,
                     getLocationLat: (loc) => loc.lat,
@@ -1426,13 +1439,14 @@ HTMLWidgets.widget({
                   flowmapLayers.push(flowmapLayer);
                   console.log("Flowmap layer '" + flowmapConfig.id + "' created successfully");
 
-                  // Helper to update deck.gl canvas blending via CSS classes and direct tagging
-                  const updateDeckEffects = (darkMode, mixBlendMode = 'auto', attempt = 1) => {
-                    console.log(`[MapGL updateDeckEffects] Attempt ${attempt}, darkMode: ${darkMode}, mixBlendMode: ${mixBlendMode}`);
-
+                  /*
+                   * Helper to update container styling and basemap effects
+                   * Note: Blend mode is now handled via WebGL parameters in getLayerProps
+                   */
+                  const updateDeckEffects = (darkMode) => {
                     const container = map.getContainer();
 
-                    // Toggle container classes for context
+                    // Toggle container classes for styling context
                     if (darkMode) {
                       container.classList.add('flowmap-dark-mode');
                       container.classList.remove('flowmap-light-mode');
@@ -1443,71 +1457,16 @@ HTMLWidgets.widget({
                       container.style.backgroundColor = '#fff';
                     }
 
-                    // Toggle dimming class
+                    // Toggle basemap dimming class
                     if (flowmapConfig.dimBasemap) {
                       container.classList.add('flowmap-dim-basemap');
                     } else {
                       container.classList.remove('flowmap-dim-basemap');
                     }
-
-                    // Find and tag the deck canvas AND its container
-                    let deckCanvas = null;
-                    let deckContainer = null;
-                    const allCanvases = document.querySelectorAll('canvas');
-                    console.log(`[MapGL updateDeckEffects] Found ${allCanvases.length} total canvas elements`);
-
-                    for (let i = 0; i < allCanvases.length; i++) {
-                      const cvs = allCanvases[i];
-                      const isMapbox = cvs.classList.contains('mapboxgl-canvas');
-                      const isMaplibre = cvs.classList.contains('maplibregl-canvas');
-                      const rect = cvs.getBoundingClientRect();
-
-                      console.log(`[MapGL updateDeckEffects] Canvas ${i}: mapbox=${isMapbox}, maplibre=${isMaplibre}, size=${rect.width}x${rect.height}`);
-
-                      // Exclude base map canvases
-                      if (!isMapbox && !isMaplibre) {
-                        // Heuristic: Must be visible and have size
-                        if (rect.width > 10 && rect.height > 10) {
-                          deckCanvas = cvs;
-                          // Get the parent container - deck.gl wraps canvas in a div
-                          deckContainer = cvs.parentElement;
-                          console.log(`[MapGL updateDeckEffects] ✓ Found deck.gl canvas at index ${i}`);
-                          console.log(`[MapGL updateDeckEffects] ✓ Deck container element:`, deckContainer);
-                          break;
-                        }
-                      }
-                    }
-
-                    if (deckCanvas && deckContainer) {
-                      deckCanvas.classList.add('flowmap-overlay-canvas');
-
-                      // Determine blend mode
-                      let blendMode;
-                      if (mixBlendMode === 'auto') {
-                        blendMode = darkMode ? 'screen' : 'darken';
-                      } else {
-                        blendMode = mixBlendMode;
-                      }
-
-                      // Apply blend mode to CONTAINER (like React example), not just canvas
-                      deckContainer.style.setProperty('mix-blend-mode', blendMode, 'important');
-
-                      console.log(`[MapGL updateDeckEffects] ✓ Applied mixBlendMode: ${blendMode} to deck CONTAINER with !important`);
-                      console.log(`[MapGL updateDeckEffects] Container element tag: ${deckContainer.tagName}`);
-                      console.log(`[MapGL updateDeckEffects] Container style.mixBlendMode: ${deckContainer.style.mixBlendMode}`);
-                      console.log(`[MapGL updateDeckEffects] Container computed style:`, window.getComputedStyle(deckContainer).mixBlendMode);
-                    } else {
-                      if (attempt < 20) {
-                        console.log(`[MapGL updateDeckEffects] ⚠ Deck canvas not found, retrying in 250ms...`);
-                        setTimeout(() => updateDeckEffects(darkMode, mixBlendMode, attempt + 1), 250);
-                      } else {
-                        console.error(`[MapGL updateDeckEffects] ✗ Failed to find deck canvas after ${attempt} attempts`);
-                      }
-                    }
                   };
 
                   // Initial call
-                  updateDeckEffects(flowmapConfig.settings.darkMode, flowmapConfig.settings.mixBlendMode || 'auto');
+                  updateDeckEffects(flowmapConfig.settings.darkMode);
 
                   // Create settings menu if requested
                   if (flowmapConfig.showSettingsMenu && typeof FlowmapSettings !== 'undefined') {
@@ -1516,51 +1475,102 @@ HTMLWidgets.widget({
                       FlowmapSettings.destroyGUI(map._flowmapGUIs[flowmapConfig.id]);
                     }
 
+                    // Track previous state and version counter for smart updates
+                    let previousState = { ...flowmapConfig.settings };
+                    let layerVersion = 0;
+
                     const guiInstance = FlowmapSettings.createGUI(
                       flowmapConfig.settings,
                       function () {
                         // Callback when settings change
                         const newState = guiInstance.getState();
-                        console.log('[MapGL Settings Change]', newState);
+                        console.log('[MapGL Settings Change] Callback fired!', newState);
 
-                        // Update blending mode using outer scope function
-                        updateDeckEffects(newState.darkMode, newState.mixBlendMode || 'auto');
+                        // Update blending mode using outer scope function (CSS-only, no layer recreation needed)
+                        updateDeckEffects(newState.darkMode);
 
-                        // Create new layer with updated settings
+                        // Determine if we need layer recreation (versioned ID) or just prop update
+                        // Props that require full layer recreation:
+                        const needsRecreation =
+                          previousState.clusteringEnabled !== newState.clusteringEnabled ||
+                          previousState.clusteringMethod !== newState.clusteringMethod ||
+                          previousState.clusteringAuto !== newState.clusteringAuto ||
+                          (previousState.clusteringLevel !== newState.clusteringLevel && !newState.clusteringAuto);
+
                         const layerProps = getLayerProps(newState);
-                        console.log('[MapGL Settings Change] Creating new FlowmapLayer with props:', {
-                          id: layerProps.id,
-                          darkMode: layerProps.darkMode,
-                          colorScheme: layerProps.colorScheme,
-                          opacity: layerProps.opacity,
-                          animationEnabled: layerProps.animationEnabled
-                        });
-                        const updatedLayer = new FlowmapLayer(layerProps);
-                        console.log('[MapGL Settings Change] New FlowmapLayer created:', updatedLayer);
+                        let updatedLayer;
 
-                        // Update deck overlay with new layer
-                        if (map._deckOverlay) {
-                          // Update our local cache of layers
-                          if (!map._flowmapLayers) map._flowmapLayers = [];
+                        if (needsRecreation) {
+                          // APPROACH 1: Full recreation with versioned ID (causes flicker but ensures update)
+                          layerVersion++;
+                          const versionedId = `${flowmapConfig.id}-v${layerVersion}`;
+                          layerProps.id = versionedId;
 
-                          // Replace the layer in our cache
-                          const index = map._flowmapLayers.findIndex(l => l.id === flowmapConfig.id);
-                          console.log('[MapGL Settings Change] Replacing layer at index:', index);
-                          if (index !== -1) {
-                            map._flowmapLayers[index] = updatedLayer;
-                          } else {
-                            map._flowmapLayers.push(updatedLayer);
-                          }
-
-                          // Update the overlay
-                          console.log('[MapGL Settings Change] Updating deck overlay with layers:', map._flowmapLayers.length);
-                          map._deckOverlay.setProps({
-                            layers: [...map._flowmapLayers]
+                          console.log('[MapGL Settings Change] Creating new layer (clustering changed):', {
+                            id: versionedId,
+                            version: layerVersion,
+                            reason: 'clustering settings changed'
                           });
-                          console.log('[MapGL Settings Change] ✓ Deck overlay updated');
+
+                          updatedLayer = new FlowmapLayer(layerProps);
+
+                          if (map._deckOverlay && map._flowmapLayers) {
+                            // Remove old versions
+                            map._flowmapLayers = map._flowmapLayers.filter(l => !l.id.startsWith(flowmapConfig.id));
+                            map._flowmapLayers.push(updatedLayer);
+
+                            map._deckOverlay.setProps({ layers: [...map._flowmapLayers] });
+                            console.log('[MapGL Settings Change] ✓ Layer recreated');
+                          }
                         } else {
-                          console.error('[MapGL Settings Change] ✗ No deck overlay found!');
+                          // APPROACH 2: Update existing layer props (smooth, no flicker)
+                          layerProps.id = flowmapConfig.id; // Keep same ID
+                          layerProps.updateTriggers = {
+                            getFlowMagnitude: [newState.fadeEnabled, newState.fadeAmount, newState.fadeOpacityEnabled],
+                            all: [
+                              newState.darkMode,
+                              newState.colorScheme,
+                              newState.opacity,
+                              newState.animationEnabled,
+                              newState.fadeEnabled,
+                              newState.adaptiveScalesEnabled,
+                              newState.locationsEnabled,
+                              newState.locationTotalsEnabled,
+                              newState.locationLabelsEnabled,
+                              newState.maxTopFlowsDisplayNum
+                            ]
+                          };
+
+                          console.log('[MapGL Settings Change] Updating existing layer props (smooth):', {
+                            id: flowmapConfig.id,
+                            changed: Object.keys(newState).filter(k => previousState[k] !== newState[k])
+                          });
+
+                          updatedLayer = new FlowmapLayer(layerProps);
+
+                          if (map._deckOverlay && map._flowmapLayers) {
+                            // Replace layer with same ID
+                            const index = map._flowmapLayers.findIndex(l =>
+                              l.id === flowmapConfig.id || l.id.startsWith(flowmapConfig.id)
+                            );
+                            if (index !== -1) {
+                              map._flowmapLayers[index] = updatedLayer;
+                            } else {
+                              map._flowmapLayers.push(updatedLayer);
+                            }
+
+                            map._deckOverlay.setProps({ layers: [...map._flowmapLayers] });
+                            console.log('[MapGL Settings Change] ✓ Layer props updated (no recreation)');
+                          }
                         }
+
+                        // Update previous state
+                        previousState = { ...newState };
+
+                        // Trigger repaint
+                        setTimeout(() => {
+                          map.triggerRepaint();
+                        }, 10);
                       }
                     );
 
