@@ -266,20 +266,18 @@ add_flowmap <- function(
     ))
   }
 
-  # DATA SERIALIZATION APPROACH (matches flowmap.gl examples):
-  # 1. Select only required columns to minimize JSON payload size
-  # 2. Ensure proper data types (numeric for lat/lon/count, character for ids)
-  # 3. Convert to list-of-lists for correct JSON serialization
+  # DATA SERIALIZATION OPTIMIZATION:
+  # Pass data.frames directly in columnar format (R's native format).
+  # htmlwidgets will serialize as: {"id": ["A","B"], "lat": [40.7, 34]}
   #
-  # IMPORTANT: htmlwidgets serializes data.frames as columnar JSON by default:
-  #   {"id": ["A","B"], "lat": [40.7, 34]}  ← WRONG (columnar)
-  # But flowmap.gl expects array of objects:
-  #   [{"id":"A","lat":40.7}, {"id":"B","lat":34}]  ← CORRECT (row-wise)
+  # The JavaScript code uses HTMLWidgets.dataframeToD3() to efficiently convert
+  # columnar format to the row-oriented array that flowmap.gl expects:
+  # [{"id":"A","lat":40.7}, {"id":"B","lat":34}]
   #
-  # We use purrr::transpose() to convert data.frame → list-of-lists.
-  # This uses more memory temporarily (~7 MB per 10k rows) but ensures correct
-  # JSON format. Memory is freed after widget serialization.
-  # Benchmarks: purrr::transpose is 70x faster than lapply row-by-row.
+  # This is MUCH faster than using purrr::transpose() in R because:
+  # 1. R side: Minimal processing, just pass vectors
+  # 2. Network: Columnar JSON is smaller (keys written once, not N times)
+  # 3. Browser: V8 engine is highly optimized for array operations
 
   # Select only required columns for locations
   locations_cols <- c("id", "lat", "lon", "name")
@@ -290,7 +288,8 @@ add_flowmap <- function(
   if (!is.null(tooltip) && tooltip %in% names(locations_df) && !tooltip %in% locations_cols) {
     locations_cols <- c(locations_cols, tooltip)
   }
-  locations_subset <- locations_df[, locations_cols, drop = FALSE]
+  # Ensure clean data.frame (not sf or tibble)
+  locations_subset <- as.data.frame(locations_df[, locations_cols, drop = FALSE])
 
   # Select only required columns for flows
   flows_cols <- c("origin", "dest", "count")
@@ -300,19 +299,15 @@ add_flowmap <- function(
   if (!is.null(tooltip) && tooltip %in% names(flows) && !tooltip %in% flows_cols) {
     flows_cols <- c(flows_cols, tooltip)
   }
-  flows_subset <- flows[, flows_cols, drop = FALSE]
-
-  # Convert to list-of-lists for correct JSON array-of-objects serialization
-  # This is required for flowmap.gl compatibility
-  locations_list <- purrr::transpose(as.list(locations_subset))
-  flows_list <- purrr::transpose(as.list(flows_subset))
+  # Ensure clean data.frame
+  flows_subset <- as.data.frame(flows[, flows_cols, drop = FALSE])
 
   # Create flowmap configuration
   flowmap_config <- list(
     id = id,
     data = list(
-      locations = locations_list,
-      flows = flows_list
+      locations = locations_subset,
+      flows = flows_subset
     ),
     settings = list(
       colorScheme = color_scheme,

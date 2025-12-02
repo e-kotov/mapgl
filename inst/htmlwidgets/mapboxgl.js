@@ -1298,6 +1298,23 @@ HTMLWidgets.widget({
                 try {
                   const { FlowmapLayer } = FlowmapGL;
 
+                  // Transform columnar data from R to row-oriented arrays for flowmap.gl
+                  // R sends data as: {"id": ["A","B"], "lat": [10, 20]}
+                  // flowmap.gl expects: [{"id":"A","lat":10}, {"id":"B","lat":20}]
+                  let locations = flowmapConfig.data.locations;
+                  if (locations && !Array.isArray(locations) && typeof locations === 'object') {
+                    locations = HTMLWidgets.dataframeToD3(locations);
+                  }
+
+                  let flows = flowmapConfig.data.flows;
+                  if (flows && !Array.isArray(flows) && typeof flows === 'object') {
+                    flows = HTMLWidgets.dataframeToD3(flows);
+                  }
+
+                  // Update config with transformed data
+                  flowmapConfig.data.locations = locations;
+                  flowmapConfig.data.flows = flows;
+
                   // Common props function
                   const getLayerProps = (settings) => ({
                     id: flowmapConfig.id,
