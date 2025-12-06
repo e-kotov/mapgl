@@ -754,39 +754,11 @@ HTMLWidgets.widget({
               isolation: auto !important;
             }
             
-            /* CRITICAL FIX: Remove stacking context from control container 
-               so mix-blend-mode can penetrate to the map canvas */
-            .mapboxgl-control-container, 
-            .maplibregl-control-container {
-                z-index: auto !important;
-            }
-
-            /* Ensure the map controls themselves stay usable/visible 
-               by giving them a local z-index */
-            .mapboxgl-ctrl-top-left, .mapboxgl-ctrl-top-right, 
-            .mapboxgl-ctrl-bottom-left, .mapboxgl-ctrl-bottom-right,
-            .maplibregl-ctrl-top-left, .maplibregl-ctrl-top-right, 
-            .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right {
-                z-index: 1 !important;
-            }
-            
             /* Blend mode is now applied dynamically via JavaScript updateDeckEffects()
-               to allow runtime changes via settings menu. The static CSS rules were
-               interfering with dynamic updates. */
+               to allow runtime changes via settings menu. */
 
-            /* Dimming for Dark Mode */
-            .flowmap-dark-mode.flowmap-dim-basemap .mapboxgl-canvas,
-            .flowmap-dark-mode.flowmap-dim-basemap .maplibregl-canvas {
-               filter: grayscale(0.1) invert(1) hue-rotate(-180deg) saturate(0.5) contrast(0.9) !important;
-               opacity: 0.3 !important;
-            }
-
-            /* Dimming for Light Mode */
-            .flowmap-light-mode.flowmap-dim-basemap .mapboxgl-canvas,
-            .flowmap-light-mode.flowmap-dim-basemap .maplibregl-canvas {
-               filter: grayscale(0.85) !important;
-               opacity: 0.5 !important;
-            }
+            /* Dimming is now handled via native fill layers (not CSS filters)
+               to avoid affecting the flowmap when using interleaved rendering mode. */
 
             /* Tooltip styling from flowmap.gl example */
             .flowmap-tooltip {
@@ -1278,7 +1250,7 @@ HTMLWidgets.widget({
                   // Create MapboxOverlay with interleaved rendering
                   // This allows WebGL blend parameters to work correctly
                   map._deckOverlay = new MapboxOverlay({
-                    interleaved: false,
+                    interleaved: true,
                     layers: []
                   });
 
@@ -1345,14 +1317,17 @@ HTMLWidgets.widget({
                     opacity: settings.opacity !== undefined ? settings.opacity : 1.0,
                     outlineWidth: settings.outlineWidth !== undefined ? settings.outlineWidth : 0,
                     // WebGL blend parameters for proper blend mode
-                    // Dark mode: Standard alpha blending (fallback for Mapbox GL JS)
-                    // Light mode: Not yet supported (needs different blend function)
-                    parameters: settings.darkMode ? {
+                    // Dark mode + hack: [SRC_ALPHA, ONE_MINUS_DST_COLOR] = additive glow "screen" effect
+                    // Light mode or no hack: Standard alpha blending
+                    // NOTE: The "darken" CSS effect cannot be easily replicated in WebGL blend modes
+                    parameters: {
                       blend: true,
-                      blendFunc: [GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA],
+                      blendFunc: (flowmapConfig.blendModeHack && settings.darkMode) ?
+                        [GL.SRC_ALPHA, GL.ONE_MINUS_DST_COLOR] : // Screen-like glow for dark mode only
+                        [GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA],  // Standard alpha blending otherwise
                       blendEquation: GL.FUNC_ADD,
-                      depthTest: false
-                    } : undefined,
+                      depthTest: false // Always disable depth test to ensure visibility
+                    },
                     // Data accessors
                     getLocationId: (loc) => loc.id,
                     getLocationLat: (loc) => loc.lat,
@@ -1458,9 +1433,86 @@ HTMLWidgets.widget({
                    * Note: Blend mode is now handled via WebGL parameters in getLayerProps
                    */
                   const updateDeckEffects = (darkMode) => {
-                    const container = map.getContainer();
+                    // Helper to update basemap dimming using a native fill layer
+                    // We use a fill layer instead of CSS filters because with interleaved: true,
+                    // CSS filters on the canvas would also dim the flowmap itself!
+                    const DIMMER_SOURCE_ID = 'flowmap-dimmer-source';
+                    const DIMMER_LAYER_ID = 'flowmap-dimmer-layer';
 
-                    // Toggle container classes for styling context
+                    // Ensure source exists
+                    if (!map.getSource(DIMMER_SOURCE_ID)) {
+                      map.addSource(DIMMER_SOURCE_ID, {
+                        'type': 'geojson',
+                        'data': {
+                          'type': 'Feature',
+                          'geometry': {
+                            'type': 'Polygon',
+                            'coordinates': [
+                              [
+                                [-180, -90],
+                                [180, -90],
+                                [180, 90],
+                                [-180, 90],
+                                [-180, -90]
+                              ]
+                            ]
+                          }
+                        }
+                      });
+                    }
+
+                    if (flowmapConfig.dimBasemap) {
+                      if (!map.getLayer(DIMMER_LAYER_ID)) {
+                        // With interleaved: true, deck.gl layers are added to Mapbox's style layer stack.
+                        // We need to add the dimmer BEFORE any deck.gl layers so it dims the base map only.
+                        // Deck.gl layers from MapboxOverlay are typically added with IDs like "flows-<id>".
+                        // We'll try to find the first deck/flowmap layer and insert before it.
+                        // If we can't find one, we'll insert before the first symbol layer to keep labels on top.
+
+                        let beforeId = null;
+                        const layers = map.getStyle().layers;
+
+                        // Try to find a deck.gl/flowmap layer first
+                        for (const layer of layers) {
+                          if (layer.id.includes(flowmapConfig.id) || layer.id.includes('deck-')) {
+                            beforeId = layer.id;
+                            break;
+                          }
+                        }
+
+                        // If no deck layer found, insert before first symbol layer
+                        if (!beforeId) {
+                          for (const layer of layers) {
+                            if (layer.type === 'symbol') {
+                              beforeId = layer.id;
+                              break;
+                            }
+                          }
+                        }
+
+                        map.addLayer({
+                          'id': DIMMER_LAYER_ID,
+                          'type': 'fill',
+                          'source': DIMMER_SOURCE_ID,
+                          'layout': {},
+                          'paint': {
+                            'fill-color': darkMode ? '#000000' : '#ffffff',
+                            'fill-opacity': 0.8
+                          }
+                        }, beforeId);
+                      } else {
+                        // Update existing layer color properties
+                        map.setPaintProperty(DIMMER_LAYER_ID, 'fill-color', darkMode ? '#000000' : '#ffffff');
+                        map.setPaintProperty(DIMMER_LAYER_ID, 'fill-opacity', 0.8);
+                      }
+                    } else {
+                      if (map.getLayer(DIMMER_LAYER_ID)) {
+                        map.removeLayer(DIMMER_LAYER_ID);
+                      }
+                    }
+
+                    const container = map.getContainer();
+                    // Toggle container classes only for background color context
                     if (darkMode) {
                       container.classList.add('flowmap-dark-mode');
                       container.classList.remove('flowmap-light-mode');
@@ -1469,13 +1521,6 @@ HTMLWidgets.widget({
                       container.classList.add('flowmap-light-mode');
                       container.classList.remove('flowmap-dark-mode');
                       container.style.backgroundColor = '#fff';
-                    }
-
-                    // Toggle basemap dimming class
-                    if (flowmapConfig.dimBasemap) {
-                      container.classList.add('flowmap-dim-basemap');
-                    } else {
-                      container.classList.remove('flowmap-dim-basemap');
                     }
                   };
 
@@ -1490,15 +1535,26 @@ HTMLWidgets.widget({
                     }
 
                     // Track previous state and version counter for smart updates
-                    let previousState = { ...flowmapConfig.settings };
+                    let previousState = { ...flowmapConfig.settings, blendModeHack: flowmapConfig.blendModeHack };
                     let layerVersion = 0;
 
                     const guiInstance = FlowmapSettings.createGUI(
-                      flowmapConfig.settings,
+                      {
+                        ...flowmapConfig.settings,
+                        dimBasemap: flowmapConfig.dimBasemap,
+                        blendModeHack: flowmapConfig.blendModeHack
+                      },
                       function () {
                         // Callback when settings change
                         const newState = guiInstance.getState();
                         console.log('[MapGL Settings Change] Callback fired!', newState);
+
+                        // Capture previous blendModeHack BEFORE updating (for comparison)
+                        const previousBlendModeHack = previousState.blendModeHack;
+
+                        // Update global config with new settings that affect container (dimBasemap, blendModeHack)
+                        flowmapConfig.dimBasemap = newState.dimBasemap;
+                        flowmapConfig.blendModeHack = newState.blendModeHack;
 
                         // Update blending mode using outer scope function (CSS-only, no layer recreation needed)
                         updateDeckEffects(newState.darkMode);
@@ -1509,7 +1565,9 @@ HTMLWidgets.widget({
                           previousState.clusteringEnabled !== newState.clusteringEnabled ||
                           previousState.clusteringMethod !== newState.clusteringMethod ||
                           previousState.clusteringAuto !== newState.clusteringAuto ||
-                          (previousState.clusteringLevel !== newState.clusteringLevel && !newState.clusteringAuto);
+                          (previousState.clusteringLevel !== newState.clusteringLevel && !newState.clusteringAuto) ||
+                          previousState.darkMode !== newState.darkMode || // WebGL parameters depend on darkMode
+                          previousBlendModeHack !== newState.blendModeHack; // WebGL parameters depend on blendModeHack
 
                         const layerProps = getLayerProps(newState);
                         let updatedLayer;
@@ -1547,6 +1605,7 @@ HTMLWidgets.widget({
                               newState.opacity,
                               newState.animationEnabled,
                               newState.fadeEnabled,
+                              flowmapConfig.blendModeHack,
                               newState.adaptiveScalesEnabled,
                               newState.locationsEnabled,
                               newState.locationTotalsEnabled,

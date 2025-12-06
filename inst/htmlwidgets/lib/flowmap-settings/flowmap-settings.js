@@ -38,6 +38,8 @@
         darkMode: initialSettings.darkMode !== undefined ? initialSettings.darkMode : true,
         colorScheme: initialSettings.colorScheme || 'Teal',
         highlightColor: initialSettings.highlightColor || '#ff9b29',
+        dimBasemap: initialSettings.dimBasemap !== undefined ? initialSettings.dimBasemap : false,
+        blendModeHack: initialSettings.blendModeHack !== undefined ? initialSettings.blendModeHack : true,
         opacity: initialSettings.opacity !== undefined ? initialSettings.opacity : 1.0,
         fadeEnabled: initialSettings.fadeEnabled !== undefined ? initialSettings.fadeEnabled : true,
         fadeOpacityEnabled: initialSettings.fadeOpacityEnabled !== undefined ? initialSettings.fadeOpacityEnabled : false,
@@ -56,6 +58,8 @@
 
       // Add controls
       gui.add(state, 'darkMode').onChange(onSettingsChange);
+      gui.add(state, 'dimBasemap').name('Dim Basemap').onChange(onSettingsChange);
+      gui.add(state, 'blendModeHack').name('WebGL Hack').onChange(onSettingsChange);
       gui.add(state, 'colorScheme', COLOR_SCHEMES).onChange(onSettingsChange);
       gui.addColor(state, 'highlightColor').onChange(onSettingsChange);
       gui.add(state, 'opacity', 0.0, 1.0).onChange(onSettingsChange);

@@ -35,6 +35,7 @@
 #' @param clustering_method Clustering algorithm to use. Either "HCA" (Hierarchical Cluster Analysis) or "H3" (H3 hexagonal hierarchical spatial index). Default is "HCA".
 #' @param show_settings_menu Whether to display an interactive settings menu on the map for real-time customization. Useful for exploring different visual configurations. Default is FALSE.
 #' @param dim_basemap Whether to apply CSS filters to dim the basemap and make the flowmap stand out. In dark mode, applies grayscale, invert, and color adjustments with reduced opacity. In light mode, applies grayscale with reduced opacity. Matches the visual style of flowmap.gl examples. Default is FALSE.
+#' @param blending_mode_hack Whether to apply WebGL/CSS blending hacks to ensure flows are visible and blend correctly. For MapLibre, this disables depth testing in light mode. For Mapbox, this applies CSS mix-blend-mode to the canvas. Default is TRUE. Disabling this generally reverts to standard DeckGL rendering which may have visibility issues depending on the map style.
 #' @param popup A column name from locations or flows to display in a popup on click.
 #' @param tooltip A column name from locations or flows to display in a tooltip on hover.
 #'
@@ -98,6 +99,7 @@ add_flowmap <- function(
   clustering_method = "HCA",
   show_settings_menu = FALSE,
   dim_basemap = FALSE,
+  blending_mode_hack = TRUE,
   popup = NULL,
   tooltip = NULL
 ) {
@@ -352,6 +354,7 @@ add_flowmap <- function(
     ),
     showSettingsMenu = show_settings_menu,
     dimBasemap = dim_basemap,
+    blendModeHack = blending_mode_hack,
     popup = popup,
     tooltip = tooltip
   )
