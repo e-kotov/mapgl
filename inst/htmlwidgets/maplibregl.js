@@ -1229,22 +1229,106 @@ HTMLWidgets.widget({
                 map._flowmapGUIs = {};
               }
 
-              // Initialize deck.gl overlay if not already created
-              if (!map._deckOverlay) {
+              // Initialize STANDALONE deck.gl (NOT MapboxOverlay) for proper CSS blend mode support
+              // This matches the official flowmap.gl example architecture
+              if (!map._deckgl) {
                 try {
-                  const { MapboxOverlay } = FlowmapGL;
+                  const { Deck } = FlowmapGL;
+                  const container = map.getContainer();
 
-                  // Create MapboxOverlay with interleaved rendering
-                  // This allows WebGL blend parameters to work correctly
-                  map._deckOverlay = new MapboxOverlay({
-                    interleaved: true,
-                    layers: []
+                  // Create a container div for deck.gl canvas
+                  const deckContainer = document.createElement('div');
+                  deckContainer.id = 'deck-container';
+                  deckContainer.style.cssText = `
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    pointer-events: none;
+                    z-index: 1;
+                  `;
+                  container.appendChild(deckContainer);
+
+                  // Store reference for blend mode updates
+                  map._deckContainer = deckContainer;
+
+                  // Get initial viewstate from map
+                  const center = map.getCenter();
+                  const initialViewState = {
+                    longitude: center.lng,
+                    latitude: center.lat,
+                    zoom: map.getZoom(),
+                    pitch: map.getPitch(),
+                    bearing: map.getBearing()
+                  };
+
+                  // Create standalone Deck instance
+                  map._deckgl = new Deck({
+                    parent: deckContainer,
+                    controller: false, // Map controls the viewstate
+                    initialViewState: initialViewState,
+                    layers: [],
+                    getTooltip: null,
+                    pickingRadius: 5,
+                    // Ensure transparent background
+                    parameters: {
+                      clearColor: [0, 0, 0, 0]
+                    },
+                    onWebGLInitialized: (gl) => {
+                      // Ensure transparent canvas
+                      gl.enable(gl.BLEND);
+                      console.log('[MapLibre Deck.gl] WebGL initialized with transparent canvas');
+                    }
                   });
 
-                  // Add the overlay to the map
-                  map.addControl(map._deckOverlay);
+                  // Sync viewstate when map moves
+                  // Sync viewstate when map moves
+                  const syncViewState = () => {
+                    const center = map.getCenter();
+                    map._deckgl.setProps({
+                      viewState: {
+                        longitude: center.lng,
+                        latitude: center.lat,
+                        zoom: map.getZoom(),
+                        pitch: map.getPitch(),
+                        bearing: map.getBearing()
+                      }
+                    });
+                  };
 
-                  console.log("Deck.gl MapboxOverlay initialized");
+                  map.on('move', syncViewState);
+                  map.on('moveend', syncViewState);
+
+                  // Forward mouse move to deck.gl for picking/tooltips
+                  // (Required because deck container has pointer-events: none)
+                  const onMapMouseMove = (e) => {
+                    if (!map._deckgl) return;
+                    const { x, y } = e.point;
+                    const info = map._deckgl.pickObject({ x, y, radius: 2 });
+
+                    map.getCanvas().style.cursor = info ? 'pointer' : '';
+
+                    if (info && info.layer && info.layer.props.onHover) {
+                      info.layer.props.onHover(info);
+                    } else {
+                      // Hide all tooltips
+                      const tooltips = document.querySelectorAll('.flowmap-tooltip');
+                      tooltips.forEach(t => { t.style.display = 'none'; });
+                    }
+                  };
+
+                  // Add listener only once
+                  if (!map._hasDeckMoveListener) {
+                    map.on('mousemove', onMapMouseMove);
+                    map.on('mouseout', () => {
+                      const tooltips = document.querySelectorAll('.flowmap-tooltip');
+                      tooltips.forEach(t => { t.style.display = 'none'; });
+                    });
+                    map._hasDeckMoveListener = true;
+                  }
+
+                  console.log('[MapLibre] Standalone Deck.gl initialized for CSS blend mode support');
 
                   // Cleanup function for when map is destroyed
                   map.on('remove', function () {
@@ -1256,9 +1340,17 @@ HTMLWidgets.widget({
                       });
                       map._flowmapGUIs = {};
                     }
+                    if (map._deckgl) {
+                      map._deckgl.finalize();
+                      map._deckgl = null;
+                    }
+                    if (map._deckContainer) {
+                      map._deckContainer.remove();
+                      map._deckContainer = null;
+                    }
                   });
                 } catch (error) {
-                  console.error("Failed to initialize MapboxOverlay:", error);
+                  console.error('Failed to initialize standalone Deck.gl:', error);
                   return;
                 }
               }
@@ -1287,13 +1379,10 @@ HTMLWidgets.widget({
                   flowmapConfig.data.locations = locations;
                   flowmapConfig.data.flows = flows;
 
-                  // Common props function
                   // WebGL constants for blend mode
                   const GL = {
-                    ONE: 1,
                     SRC_ALPHA: 770,
                     ONE_MINUS_SRC_ALPHA: 771,
-                    ONE_MINUS_DST_COLOR: 775,
                     FUNC_ADD: 32774
                   };
 
@@ -1303,17 +1392,14 @@ HTMLWidgets.widget({
                     pickable: true,
                     opacity: settings.opacity !== undefined ? settings.opacity : 1.0,
                     outlineWidth: settings.outlineWidth !== undefined ? settings.outlineWidth : 0,
-                    // WebGL blend parameters for proper blend mode
-                    // Dark mode + hack: [SRC_ALPHA, ONE_MINUS_DST_COLOR] = additive glow "screen" effect
-                    // Light mode or no hack: Standard alpha blending
-                    // NOTE: The "darken" CSS effect cannot be easily replicated in WebGL blend modes
+                    // Standard WebGL blend parameters
+                    // The actual "screen" and "darken" effects are achieved via CSS mix-blend-mode
+                    // on the deck.gl canvas (which is separate from the map canvas with interleaved: false)
                     parameters: {
                       blend: true,
-                      blendFunc: (flowmapConfig.blendModeHack && settings.darkMode) ?
-                        [GL.SRC_ALPHA, GL.ONE_MINUS_DST_COLOR] : // Screen-like glow for dark mode only
-                        [GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA],  // Standard alpha blending otherwise
+                      blendFunc: [GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA],
                       blendEquation: GL.FUNC_ADD,
-                      depthTest: false // Always disable depth test to ensure visibility
+                      depthTest: false
                     },
                     // Data accessors
                     getLocationId: (loc) => loc.id,
@@ -1415,15 +1501,38 @@ HTMLWidgets.widget({
 
                   map._flowmapLayers.push(flowmapLayer);
                   console.log("Flowmap layer '" + flowmapConfig.id + "' created successfully");
-
                   /*
-                   * Helper to update container styling and basemap effects
-                   * Note: Blend mode is now handled via WebGL parameters in getLayerProps
+                   * Helper to update container styling, basemap effects, and CSS blend modes
+                   * With interleaved: false, deck.gl renders to a SEPARATE canvas, so CSS mix-blend-mode works!
+                   * This matches the official flowmap.gl example: https://visgl.github.io/flowmap.gl/
+                   */
+                  /*
+                   * Helper to update container styling, basemap effects, and CSS blend modes
+                   * With standalone Deck.gl, we have full control over the canvas and container
                    */
                   const updateDeckEffects = (darkMode) => {
-                    const container = map.getContainer();
+                    // Apply CSS mix-blend-mode to deck.gl canvas
+                    // ONLY use blend mode if dimBasemap is ON, otherwise fallback to normal for visibility
+                    const useBlending = flowmapConfig.dimBasemap;
+                    const bgMode = useBlending ? (darkMode ? 'screen' : 'darken') : 'normal';
 
-                    // Toggle container classes for styling context
+                    if (map._deckContainer) {
+                      // Apply blend mode to the container div we created
+                      map._deckContainer.style.setProperty('mix-blend-mode', bgMode, 'important');
+                    }
+
+                    if (map._deckgl) {
+                      const canvas = map._deckgl.getCanvas();
+                      if (canvas) {
+                        canvas.style.setProperty('mix-blend-mode', bgMode, 'important');
+                        canvas.style.setProperty('background', 'transparent', 'important');
+                      }
+                    }
+
+                    const container = map.getContainer();
+                    const mapCanvas = map.getCanvas();
+
+                    // Update Container Background (provides the base color when map opacity is reduced)
                     if (darkMode) {
                       container.classList.add('flowmap-dark-mode');
                       container.classList.remove('flowmap-light-mode');
@@ -1434,68 +1543,28 @@ HTMLWidgets.widget({
                       container.style.backgroundColor = '#fff';
                     }
 
-                    // REMOVED mix-blend-mode from container as it hides the entire map
-
-
-                    /* 
-                     * Dimming strategy for MapLibre (interleaved: true)
-                     * We utilize native MapLibre layers instead of deck.gl layers to ensure stability.
-                     * We add a fill layer covering the world on top of the basemap but (implicitly) below deck overlay 
-                     * if deck overlay is added via addControl/interleaved.
-                     */
-                    const DIMMER_SOURCE_ID = 'flowmap-dimmer-source';
-                    const DIMMER_LAYER_ID = 'flowmap-dimmer-layer';
-
+                    // Handle Basemap Dimming via CSS Filters (matches flowmap.gl reference)
+                    // If dimBasemap is OFF, reset filters
                     if (flowmapConfig.dimBasemap) {
-                      // Ensure source exists
-                      if (!map.getSource(DIMMER_SOURCE_ID)) {
-                        map.addSource(DIMMER_SOURCE_ID, {
-                          'type': 'geojson',
-                          'data': {
-                            'type': 'Feature',
-                            'geometry': {
-                              'type': 'Polygon',
-                              'coordinates': [[
-                                [-180, 90],
-                                [180, 90],
-                                [180, -90],
-                                [-180, -90],
-                                [-180, 90]
-                              ]]
-                            }
-                          }
-                        });
-                      }
-
-                      // Ensure layer exists
-                      if (!map.getLayer(DIMMER_LAYER_ID)) {
-                        // We attempt to add it *under* specific layers if possible, but usually just adding it works
-                        // as MapboxOverlay (on top) will draw over it.
-                        // However, to be safe, we can try to find the first symbol layer and add before it?
-                        // Or just add it. Given MapLibre's stack, adding it usually puts it on top of tiles.
-                        map.addLayer({
-                          'id': DIMMER_LAYER_ID,
-                          'type': 'fill',
-                          'source': DIMMER_SOURCE_ID,
-                          'layout': {},
-                          'paint': {
-                            'fill-color': darkMode ? '#000000' : '#ffffff',
-                            'fill-opacity': 0.8
-                          }
-                        });
+                      if (darkMode) {
+                        // Dark Mode Filters (from reference)
+                        mapCanvas.style.filter = 'grayscale(0.1) invert(1) hue-rotate(-180deg) saturate(0.5) contrast(0.9)';
+                        mapCanvas.style.opacity = '0.3';
                       } else {
-                        // Update existing layer color properties
-                        map.setPaintProperty(DIMMER_LAYER_ID, 'fill-color', darkMode ? '#000000' : '#ffffff');
-                        map.setPaintProperty(DIMMER_LAYER_ID, 'fill-opacity', 0.8);
+                        // Light Mode Filters (from reference)
+                        mapCanvas.style.filter = 'grayscale(0.85)';
+                        mapCanvas.style.opacity = '0.5';
                       }
-
                     } else {
-                      if (map.getLayer(DIMMER_LAYER_ID)) {
-                        map.removeLayer(DIMMER_LAYER_ID);
-                      }
-                      // We can leave the source, it's harmless
+                      mapCanvas.style.filter = '';
+                      mapCanvas.style.opacity = '';
                     }
 
+                    // Cleanup old dimmer layer if it exists (for robustness)
+                    const DIMMER_LAYER_ID = 'flowmap-dimmer-layer';
+                    const DIMMER_SOURCE_ID = 'flowmap-dimmer-source';
+                    if (map.getLayer(DIMMER_LAYER_ID)) map.removeLayer(DIMMER_LAYER_ID);
+                    if (map.getSource(DIMMER_SOURCE_ID)) map.removeSource(DIMMER_SOURCE_ID);
                   };
 
                   // Initial call
@@ -1555,12 +1624,12 @@ HTMLWidgets.widget({
 
                           updatedLayer = new FlowmapLayer(layerProps);
 
-                          if (map._deckOverlay && map._flowmapLayers) {
+                          if (map._deckgl && map._flowmapLayers) {
                             // Remove old versions
                             map._flowmapLayers = map._flowmapLayers.filter(l => !l.id.startsWith(flowmapConfig.id));
                             map._flowmapLayers.push(updatedLayer);
 
-                            map._deckOverlay.setProps({ layers: [...map._flowmapLayers] });
+                            map._deckgl.setProps({ layers: [...map._flowmapLayers] });
                             console.log('[MapGL Settings Change] ✓ Layer recreated');
                           }
                         } else {
@@ -1590,7 +1659,7 @@ HTMLWidgets.widget({
 
                           updatedLayer = new FlowmapLayer(layerProps);
 
-                          if (map._deckOverlay && map._flowmapLayers) {
+                          if (map._deckgl && map._flowmapLayers) {
                             // Replace layer with same ID
                             const index = map._flowmapLayers.findIndex(l =>
                               l.id === flowmapConfig.id || l.id.startsWith(flowmapConfig.id)
@@ -1601,7 +1670,7 @@ HTMLWidgets.widget({
                               map._flowmapLayers.push(updatedLayer);
                             }
 
-                            map._deckOverlay.setProps({ layers: [...map._flowmapLayers] });
+                            map._deckgl.setProps({ layers: [...map._flowmapLayers] });
                             console.log('[MapGL Settings Change] ✓ Layer props updated (no recreation)');
                           }
                         }
@@ -1626,9 +1695,9 @@ HTMLWidgets.widget({
 
               // Update overlay with all flowmap layers
               // Update overlay with all flowmap layers
-              if (map._flowmapLayers.length > 0 && map._deckOverlay) {
+              if (map._flowmapLayers.length > 0 && map._deckgl) {
                 try {
-                  map._deckOverlay.setProps({ layers: [...map._flowmapLayers] });
+                  map._deckgl.setProps({ layers: [...map._flowmapLayers] });
                   console.log("Updated deck.gl overlay with " + map._flowmapLayers.length + " layers");
                 } catch (error) {
                   console.error("Failed to update deck.gl overlay:", error);
