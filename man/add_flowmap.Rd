@@ -28,7 +28,8 @@ add_flowmap(
   outline_width = 0,
   clustering_method = "HCA",
   show_settings_menu = FALSE,
-  dim_basemap = FALSE,
+  dim_basemap = NULL,
+  blend_mode = c("normal", "screen", "glow"),
   popup = NULL,
   tooltip = NULL
 )
@@ -85,11 +86,20 @@ add_flowmap(
 
 \item{opacity}{Overall opacity of the flowmap layer (0-1). Default is 1.0.}
 
+\item{outline_width}{Width of the flow line outline in pixels. Default is 0.}
+
 \item{clustering_method}{Clustering algorithm to use. Either "HCA" (Hierarchical Cluster Analysis) or "H3" (H3 hexagonal hierarchical spatial index). Default is "HCA".}
 
 \item{show_settings_menu}{Whether to display an interactive settings menu on the map for real-time customization. Useful for exploring different visual configurations. Default is FALSE.}
 
 \item{dim_basemap}{Whether to apply CSS filters to dim the basemap and make the flowmap stand out. In dark mode, applies grayscale, invert, and color adjustments with reduced opacity. In light mode, applies grayscale with reduced opacity. Matches the visual style of flowmap.gl examples. Default is FALSE.}
+
+\item{blend_mode}{Blending mode. One of "normal", "screen", or "glow".
+\itemize{
+\item "normal": No special blending (default).
+\item "screen": Applies CSS mix-blend-mode to the deck.gl canvas for a screen (dark mode) or darken (light mode) blending effect. This creates a subtle glow where flows overlap.
+\item "glow": Applies WebGL blend functions for a more pronounced glow/accumulation effect. Uses \verb{SRC_ALPHA, ONE_MINUS_DST_COLOR} which works best in dark mode with MapLibre. May have rendering issues in Mapbox.
+}}
 
 \item{popup}{A column name from locations or flows to display in a popup on click.}
 

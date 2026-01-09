@@ -32,10 +32,14 @@
 #' @param highlight_color Color for highlighting on hover. Default is "#ff9b29".
 #' @param max_top_flows Maximum number of top flows to display. Default is 5000.
 #' @param opacity Overall opacity of the flowmap layer (0-1). Default is 1.0.
+#' @param outline_width Width of the flow line outline in pixels. Default is 0.
 #' @param clustering_method Clustering algorithm to use. Either "HCA" (Hierarchical Cluster Analysis) or "H3" (H3 hexagonal hierarchical spatial index). Default is "HCA".
 #' @param show_settings_menu Whether to display an interactive settings menu on the map for real-time customization. Useful for exploring different visual configurations. Default is FALSE.
 #' @param dim_basemap Whether to apply CSS filters to dim the basemap and make the flowmap stand out. In dark mode, applies grayscale, invert, and color adjustments with reduced opacity. In light mode, applies grayscale with reduced opacity. Matches the visual style of flowmap.gl examples. Default is FALSE.
-#' @param blending_mode_hack Whether to apply WebGL/CSS blending hacks to ensure flows are visible and blend correctly. For MapLibre, this disables depth testing in light mode. For Mapbox, this applies CSS mix-blend-mode to the canvas. Default is TRUE. Disabling this generally reverts to standard DeckGL rendering which may have visibility issues depending on the map style.
+#' @param blend_mode Blending mode. One of "normal", "screen", or "glow".
+#'   - "normal": No special blending (default).
+#'   - "screen": Applies CSS mix-blend-mode to the deck.gl canvas for a screen (dark mode) or darken (light mode) blending effect. This creates a subtle glow where flows overlap.
+#'   - "glow": Applies WebGL blend functions for a more pronounced glow/accumulation effect. Uses `SRC_ALPHA, ONE_MINUS_DST_COLOR` which works best in dark mode with MapLibre. May have rendering issues in Mapbox.
 #' @param popup A column name from locations or flows to display in a popup on click.
 #' @param tooltip A column name from locations or flows to display in a tooltip on hover.
 #'
@@ -98,11 +102,28 @@ add_flowmap <- function(
   outline_width = 0,
   clustering_method = "HCA",
   show_settings_menu = FALSE,
-  dim_basemap = FALSE,
-  blending_mode_hack = TRUE,
+  dim_basemap = NULL,
+  blend_mode = c("normal", "screen", "glow"),
   popup = NULL,
   tooltip = NULL
 ) {
+  blend_mode <- match.arg(blend_mode)
+
+  # Auto-dim basemap if blending is enabled and user hasn't explicitly set it
+  if (is.null(dim_basemap)) {
+    dim_basemap <- blend_mode != "normal"
+  }
+
+  # Map simplified mode to internal booleans
+  css_blend_mode <- blend_mode == "screen"
+  webgl_blend_mode <- blend_mode == "glow"
+
+  if (webgl_blend_mode && !dark_mode) {
+    warning(
+      "blend_mode = 'glow' is intended for use with dark_mode = TRUE. Colors may appear inverted or washed out on light backgrounds."
+    )
+  }
+
   # Validate inputs
   if (!is.data.frame(locations) && !inherits(locations, "sf")) {
     stop("locations must be a data.frame or sf object")
@@ -348,13 +369,15 @@ add_flowmap <- function(
       clusteringEnabled = clustering_enabled,
       clusteringAuto = clustering_auto,
       clusteringMethod = clustering_method,
+      clusteringLevel = clustering_level,
       adaptiveScalesEnabled = adaptive_scales_enabled,
       highlightColor = highlight_color,
       maxTopFlowsDisplayNum = max_top_flows
     ),
     showSettingsMenu = show_settings_menu,
     dimBasemap = dim_basemap,
-    blendModeHack = blending_mode_hack,
+    cssBlendMode = css_blend_mode,
+    webglBlendMode = webgl_blend_mode,
     popup = popup,
     tooltip = tooltip
   )

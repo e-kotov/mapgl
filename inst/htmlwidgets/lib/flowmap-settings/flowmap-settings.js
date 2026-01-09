@@ -39,27 +39,53 @@
         colorScheme: initialSettings.colorScheme || 'Teal',
         highlightColor: initialSettings.highlightColor || '#ff9b29',
         dimBasemap: initialSettings.dimBasemap !== undefined ? initialSettings.dimBasemap : false,
-        blendModeHack: initialSettings.blendModeHack !== undefined ? initialSettings.blendModeHack : true,
-        opacity: initialSettings.opacity !== undefined ? initialSettings.opacity : 1.0,
+        // Initial simplified mode based on booleans
+        blendMode: initialSettings.webglBlendMode ? 'glow' : (initialSettings.cssBlendMode ? 'screen' : 'normal'),
+        cssBlendMode: initialSettings.cssBlendMode !== undefined ? initialSettings.cssBlendMode : false, // Internal
+        webglBlendMode: initialSettings.webglBlendMode !== undefined ? initialSettings.webglBlendMode : false, // Internal
+        opacity: (initialSettings.opacity !== undefined && initialSettings.opacity !== null) ? initialSettings.opacity : 1.0,
         fadeEnabled: initialSettings.fadeEnabled !== undefined ? initialSettings.fadeEnabled : true,
         fadeOpacityEnabled: initialSettings.fadeOpacityEnabled !== undefined ? initialSettings.fadeOpacityEnabled : false,
-        fadeAmount: initialSettings.fadeAmount !== undefined ? initialSettings.fadeAmount : 50,
+        fadeAmount: (initialSettings.fadeAmount !== undefined && initialSettings.fadeAmount !== null) ? initialSettings.fadeAmount : 50,
         clusteringEnabled: initialSettings.clusteringEnabled !== undefined ? initialSettings.clusteringEnabled : true,
         clusteringAuto: initialSettings.clusteringAuto !== undefined ? initialSettings.clusteringAuto : true,
-        clusteringLevel: initialSettings.clusteringLevel !== undefined ? initialSettings.clusteringLevel : 5,
+        clusteringLevel: (initialSettings.clusteringLevel !== undefined && initialSettings.clusteringLevel !== null) ? initialSettings.clusteringLevel : 5,
         clusteringMethod: initialSettings.clusteringMethod || 'HCA',
         animationEnabled: initialSettings.animationEnabled !== undefined ? initialSettings.animationEnabled : false,
         adaptiveScalesEnabled: initialSettings.adaptiveScalesEnabled !== undefined ? initialSettings.adaptiveScalesEnabled : true,
         locationsEnabled: initialSettings.locationsEnabled !== undefined ? initialSettings.locationsEnabled : true,
         locationTotalsEnabled: initialSettings.locationTotalsEnabled !== undefined ? initialSettings.locationTotalsEnabled : true,
         locationLabelsEnabled: initialSettings.locationLabelsEnabled !== undefined ? initialSettings.locationLabelsEnabled : false,
-        maxTopFlowsDisplayNum: initialSettings.maxTopFlowsDisplayNum !== undefined ? initialSettings.maxTopFlowsDisplayNum : 5000
+        maxTopFlowsDisplayNum: (initialSettings.maxTopFlowsDisplayNum !== undefined && initialSettings.maxTopFlowsDisplayNum !== null) ? initialSettings.maxTopFlowsDisplayNum : 5000
       };
 
       // Add controls
       gui.add(state, 'darkMode').onChange(onSettingsChange);
-      gui.add(state, 'dimBasemap').name('Dim Basemap').onChange(onSettingsChange);
-      gui.add(state, 'blendModeHack').name('WebGL Hack').onChange(onSettingsChange);
+
+      const effectFolder = gui.addFolder('Effects');
+      effectFolder.add(state, 'dimBasemap').name('Dim Basemap').onChange(onSettingsChange);
+
+      // Blend Mode Dropdown
+      effectFolder.add(state, 'blendMode', ['normal', 'screen', 'glow'])
+        .name('Blend Mode')
+        .onChange(function (value) {
+          // Update internal flags based on selection
+          state.cssBlendMode = (value === 'screen' || value === 'glow');
+          state.webglBlendMode = (value === 'glow');
+
+          // Smart defaults: Auto-enable dimming for blending modes if not already on
+          if (value !== 'normal' && !state.dimBasemap) {
+            state.dimBasemap = true;
+            // We need to update the checkbox UI manually if possible, or just accept it updates state
+            // lil-gui controllers update automatically if they listen to object loop, but here we just set prop.
+            // We need to find the controller for dimBasemap to update it visualy
+            const controllers = effectFolder.controllers;
+            const dimCtrl = controllers.find(c => c.property === 'dimBasemap');
+            if (dimCtrl) dimCtrl.updateDisplay();
+          }
+
+          onSettingsChange();
+        });
       gui.add(state, 'colorScheme', COLOR_SCHEMES).onChange(onSettingsChange);
       gui.addColor(state, 'highlightColor').onChange(onSettingsChange);
       gui.add(state, 'opacity', 0.0, 1.0).onChange(onSettingsChange);

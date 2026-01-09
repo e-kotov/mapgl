@@ -1396,83 +1396,98 @@ HTMLWidgets.widget({
                   const GL = {
                     SRC_ALPHA: 770,
                     ONE_MINUS_SRC_ALPHA: 771,
+                    ONE_MINUS_DST_COLOR: 775,
+                    ONE: 1, // Additive blending constant
                     FUNC_ADD: 32774
                   };
 
                   // Common props function
-                  const getLayerProps = (settings) => ({
-                    id: flowmapConfig.id,
-                    data: flowmapConfig.data,
-                    pickable: true,
-                    opacity: settings.opacity !== undefined ? settings.opacity : 1.0,
-                    outlineWidth: settings.outlineWidth !== undefined ? settings.outlineWidth : 0,
-                    // Standard WebGL blend parameters
-                    // The actual "screen" and "darken" effects are achieved via CSS mix-blend-mode
-                    // on the deck.gl canvas (which is separate from the map canvas with interleaved: false)
-                    parameters: {
-                      blend: true,
-                      blendFunc: [GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA],
-                      blendEquation: GL.FUNC_ADD,
-                      depthTest: false
-                    },
-                    // Data accessors
-                    getLocationId: (loc) => loc.id,
-                    getLocationLat: (loc) => loc.lat,
-                    getLocationLon: (loc) => loc.lon,
-                    getLocationName: (loc) => loc.name,
-                    getFlowOriginId: (flow) => flow.origin,
-                    getFlowDestId: (flow) => flow.dest,
-                    getFlowMagnitude: (flow) => flow.count,
-                    // Settings
-                    colorScheme: settings.colorScheme,
-                    darkMode: settings.darkMode,
-                    animationEnabled: settings.animationEnabled,
-                    fadeEnabled: settings.fadeEnabled,
-                    fadeAmount: settings.fadeAmount,
-                    fadeOpacityEnabled: settings.fadeOpacityEnabled,
-                    locationsEnabled: settings.locationsEnabled,
-                    locationTotalsEnabled: settings.locationTotalsEnabled,
-                    locationLabelsEnabled: settings.locationLabelsEnabled,
-                    clusteringEnabled: settings.clusteringEnabled,
-                    clusteringAuto: settings.clusteringAuto,
-                    clusteringLevel: settings.clusteringLevel,
-                    clusteringMethod: settings.clusteringMethod,
-                    adaptiveScalesEnabled: settings.adaptiveScalesEnabled,
-                    highlightColor: settings.highlightColor,
-                    maxTopFlowsDisplayNum: settings.maxTopFlowsDisplayNum,
-                    // Event handlers
-                    onHover: (info) => {
-                      // Create or get tooltip element
-                      let tooltip = document.getElementById('flowmap-tooltip-' + flowmapConfig.id);
+                  const getLayerProps = (settings) => {
+                    // Determine basic opacity
+                    let opacity = settings.opacity !== undefined ? settings.opacity : 1.0;
 
-                      if (!info || !info.object) {
-                        // Hide tooltip
-                        if (tooltip) {
-                          tooltip.style.display = 'none';
+                    // Choose blend function based on webglBlendMode setting
+                    let blendFunc;
+                    if (settings.webglBlendMode) {
+                      // Use "hacky" blend mode for "glow" effect as per user request
+                      // ONE_MINUS_DST_COLOR (775) creates the specific glow/accumulation effect
+                      blendFunc = [GL.SRC_ALPHA, GL.ONE_MINUS_DST_COLOR];
+                    } else {
+                      // Standard alpha blending
+                      blendFunc = [GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA];
+                    }
+
+                    return {
+                      id: flowmapConfig.id,
+                      data: flowmapConfig.data,
+                      pickable: true,
+                      opacity: opacity,
+                      outlineWidth: settings.outlineWidth !== undefined ? settings.outlineWidth : 0,
+                      // WebGL blend parameters
+                      parameters: {
+                        blend: true,
+                        blendFunc: blendFunc,
+                        blendEquation: GL.FUNC_ADD,
+                        depthTest: false
+                      },
+                      // Data accessors
+                      getLocationId: (loc) => loc.id,
+                      getLocationLat: (loc) => loc.lat,
+                      getLocationLon: (loc) => loc.lon,
+                      getLocationName: (loc) => loc.name,
+                      getFlowOriginId: (flow) => flow.origin,
+                      getFlowDestId: (flow) => flow.dest,
+                      getFlowMagnitude: (flow) => flow.count,
+                      // Settings
+                      colorScheme: settings.colorScheme,
+                      darkMode: settings.darkMode,
+                      animationEnabled: settings.animationEnabled,
+                      fadeEnabled: settings.fadeEnabled,
+                      fadeAmount: settings.fadeAmount,
+                      fadeOpacityEnabled: settings.fadeOpacityEnabled,
+                      locationsEnabled: settings.locationsEnabled,
+                      locationTotalsEnabled: settings.locationTotalsEnabled,
+                      locationLabelsEnabled: settings.locationLabelsEnabled,
+                      clusteringEnabled: settings.clusteringEnabled,
+                      clusteringAuto: settings.clusteringAuto,
+                      clusteringLevel: settings.clusteringLevel,
+                      clusteringMethod: settings.clusteringMethod,
+                      adaptiveScalesEnabled: settings.adaptiveScalesEnabled,
+                      highlightColor: settings.highlightColor,
+                      maxTopFlowsDisplayNum: settings.maxTopFlowsDisplayNum,
+                      // Event handlers
+                      onHover: (info) => {
+                        // Create or get tooltip element
+                        let tooltip = document.getElementById('flowmap-tooltip-' + flowmapConfig.id);
+
+                        if (!info || !info.object) {
+                          // Hide tooltip
+                          if (tooltip) {
+                            tooltip.style.display = 'none';
+                          }
+                          return;
                         }
-                        return;
-                      }
 
-                      // Create tooltip if it doesn't exist
-                      if (!tooltip) {
-                        tooltip = document.createElement('div');
-                        tooltip.id = 'flowmap-tooltip-' + flowmapConfig.id;
-                        tooltip.className = 'flowmap-tooltip';
-                        document.body.appendChild(tooltip);
-                      }
+                        // Create tooltip if it doesn't exist
+                        if (!tooltip) {
+                          tooltip = document.createElement('div');
+                          tooltip.id = 'flowmap-tooltip-' + flowmapConfig.id;
+                          tooltip.className = 'flowmap-tooltip';
+                          document.body.appendChild(tooltip);
+                        }
 
-                      // Show and position tooltip
-                      tooltip.style.display = 'block';
-                      tooltip.style.left = info.x + 'px';
-                      tooltip.style.top = info.y + 'px';
+                        // Show and position tooltip
+                        tooltip.style.display = 'block';
+                        tooltip.style.left = info.x + 'px';
+                        tooltip.style.top = info.y + 'px';
 
-                      // Generate tooltip content based on object type
-                      let content = '';
+                        // Generate tooltip content based on object type
+                        let content = '';
 
-                      // Use string comparison for type checking instead of PickingType enum
-                      switch (info.object.type) {
-                        case 'location':
-                          content = `
+                        // Use string comparison for type checking instead of PickingType enum
+                        switch (info.object.type) {
+                          case 'location':
+                            content = `
                             <div><strong>${info.object.name || info.object.id}</strong></div>
                             ${info.object.totals ? `
                               <div>Incoming: ${info.object.totals.incomingCount || 0}</div>
@@ -1480,37 +1495,46 @@ HTMLWidgets.widget({
                               <div>Internal: ${info.object.totals.internalCount || 0}</div>
                             ` : ''}
                           `;
-                          break;
-                        case 'flow':
-                          content = `
+                            break;
+                          case 'flow':
+                            content = `
                             <div><strong>${info.object.origin.id} → ${info.object.dest.id}</strong></div>
                             <div>Count: ${info.object.count}</div>
                           `;
-                          break;
-                        default:
-                          content = '<div>Unknown</div>';
-                      }
+                            break;
+                          default:
+                            content = '<div>Unknown</div>';
+                        }
 
-                      tooltip.innerHTML = content;
-                    },
-                    onClick: (info) => {
-                      if (flowmapConfig.popup && info && info.object) {
-                        // TODO: Implement popup display
-                        console.log("Flowmap click:", info.object);
+                        tooltip.innerHTML = content;
+                      },
+                      onClick: (info) => {
+                        if (flowmapConfig.popup && info && info.object) {
+                          // TODO: Implement popup display
+                          console.log("Flowmap click:", info.object);
+                        }
+                        // Send to Shiny if in Shiny mode
+                        if (HTMLWidgets.shinyMode && info && info.object) {
+                          Shiny.setInputValue(el.id + "_flowmap_click", {
+                            id: flowmapConfig.id,
+                            type: info.object.type,
+                            data: info.object
+                          });
+                        }
                       }
-                      // Send to Shiny if in Shiny mode
-                      if (HTMLWidgets.shinyMode && info && info.object) {
-                        Shiny.setInputValue(el.id + "_flowmap_click", {
-                          id: flowmapConfig.id,
-                          type: info.object.type,
-                          data: info.object
-                        });
-                      }
-                    }
-                  });
+                    };
+                  };
+
+                  // Create merged settings object for initial layer creation
+                  const initialSettings = {
+                    ...flowmapConfig.settings,
+                    dimBasemap: flowmapConfig.dimBasemap,
+                    cssBlendMode: flowmapConfig.cssBlendMode,
+                    webglBlendMode: flowmapConfig.webglBlendMode
+                  };
 
                   // Create FlowmapLayer instance
-                  const flowmapLayer = new FlowmapLayer(getLayerProps(flowmapConfig.settings));
+                  const flowmapLayer = new FlowmapLayer(getLayerProps(initialSettings));
 
                   flowmapLayers.push(flowmapLayer);
                   console.log("Flowmap layer '" + flowmapConfig.id + "' created successfully");
@@ -1526,21 +1550,39 @@ HTMLWidgets.widget({
                    */
                   const updateDeckEffects = (darkMode) => {
                     // Apply CSS mix-blend-mode to deck.gl canvas
-                    // ONLY use blend mode if dimBasemap is ON, otherwise fallback to normal for visibility
-                    const useBlending = flowmapConfig.dimBasemap;
+                    // ONLY use blend mode if cssBlendMode is ON, otherwise fallback to normal for visibility
+                    const useBlending = flowmapConfig.cssBlendMode;
                     const bgMode = useBlending ? (darkMode ? 'screen' : 'darken') : 'normal';
 
-                    if (map._deckContainer) {
-                      // Apply blend mode to the container div we created
-                      map._deckContainer.style.setProperty('mix-blend-mode', bgMode, 'important');
+                    // ROBUSTNESS FIX: explicitly search for canvas elements as per 'blend-mode-canvas-fix.md'
+                    // This ensures we catch the actual DeckGL canvas even if the wrapper structure is complex.
+
+                    let deckCanvas = null;
+                    let deckContainer = map._deckContainer; // Start with known container if available
+
+                    // Find all potential canvases
+                    const allCanvases = map.getContainer().querySelectorAll('canvas');
+
+                    for (let i = 0; i < allCanvases.length; i++) {
+                      const cvs = allCanvases[i];
+                      const isMapbox = cvs.classList.contains('mapboxgl-canvas');
+
+                      // If it's not the base map canvas, and has size, it's likely our deck canvas
+                      // (DeckGL doesn't always add a specific class, but it's the "other" canvas)
+                      if (!isMapbox && cvs.width > 10 && cvs.height > 10) {
+                        deckCanvas = cvs;
+                        if (!deckContainer) deckContainer = cvs.parentElement;
+                        break; // Assume the first non-map canvas is deck
+                      }
                     }
 
-                    if (map._deckgl) {
-                      const canvas = map._deckgl.getCanvas();
-                      if (canvas) {
-                        canvas.style.setProperty('mix-blend-mode', bgMode, 'important');
-                        canvas.style.setProperty('background', 'transparent', 'important');
-                      }
+                    if (deckCanvas) {
+                      deckCanvas.style.setProperty('mix-blend-mode', bgMode, 'important');
+                      deckCanvas.style.setProperty('background', 'transparent', 'important');
+                    }
+
+                    if (deckContainer) {
+                      deckContainer.style.setProperty('mix-blend-mode', bgMode, 'important');
                     }
 
                     const container = map.getContainer();
@@ -1592,115 +1634,142 @@ HTMLWidgets.widget({
                     }
 
                     // Track previous state and version counter for smart updates
-                    let previousState = { ...flowmapConfig.settings, blendModeHack: flowmapConfig.blendModeHack };
+                    let previousState = {
+                      ...flowmapConfig.settings,
+                      cssBlendMode: flowmapConfig.cssBlendMode,
+                      webglBlendMode: flowmapConfig.webglBlendMode
+                    };
                     let layerVersion = 0;
 
-                    const guiInstance = FlowmapSettings.createGUI(
+                    let guiInstance;
+                    guiInstance = FlowmapSettings.createGUI(
                       {
                         ...flowmapConfig.settings,
                         dimBasemap: flowmapConfig.dimBasemap,
-                        blendModeHack: flowmapConfig.blendModeHack
+                        cssBlendMode: flowmapConfig.cssBlendMode,
+                        webglBlendMode: flowmapConfig.webglBlendMode
                       },
                       function () {
-                        // Callback when settings change
-                        const newState = guiInstance.getState();
-                        console.log('[MapGL Settings Change] Callback fired!', newState);
+                        try {
+                          // Callback when settings change
+                          const newState = guiInstance.getState();
+                          console.log('[MapGL Settings Change] Callback fired with state:', newState);
 
-                        // Capture previous blendModeHack BEFORE updating (for comparison)
-                        const previousBlendModeHack = previousState.blendModeHack;
+                          // DEBUG: Expose state globally
+                          if (!window.flowmapDebug) window.flowmapDebug = {};
+                          window.flowmapDebug.lastState = newState;
+                          window.flowmapDebug.map = map;
+                          window.flowmapDebug.config = flowmapConfig;
 
-                        // Update global config with new settings that affect container (dimBasemap, blendModeHack)
-                        flowmapConfig.dimBasemap = newState.dimBasemap;
-                        flowmapConfig.blendModeHack = newState.blendModeHack;
+                          // Capture previous state BEFORE updating (for comparison)
+                          const previousWebglBlendMode = previousState.webglBlendMode;
 
-                        // Update blending mode using outer scope function (CSS-only, no layer recreation needed)
-                        updateDeckEffects(newState.darkMode);
+                          // Update global config with new settings
+                          flowmapConfig.dimBasemap = newState.dimBasemap;
+                          flowmapConfig.cssBlendMode = newState.cssBlendMode;
+                          flowmapConfig.webglBlendMode = newState.webglBlendMode;
 
-                        // Determine if we need layer recreation (versioned ID) or just prop update
-                        // Props that require full layer recreation:
-                        const needsRecreation =
-                          previousState.clusteringEnabled !== newState.clusteringEnabled ||
-                          previousState.clusteringMethod !== newState.clusteringMethod ||
-                          previousState.clusteringAuto !== newState.clusteringAuto ||
-                          (previousState.clusteringLevel !== newState.clusteringLevel && !newState.clusteringAuto) ||
-                          previousState.darkMode !== newState.darkMode || // WebGL parameters depend on darkMode
-                          previousBlendModeHack !== newState.blendModeHack; // WebGL parameters depend on blendModeHack
-
-                        const layerProps = getLayerProps(newState);
-                        let updatedLayer;
-
-                        if (needsRecreation) {
-                          // APPROACH 1: Full recreation with versioned ID (causes flicker but ensures update)
-                          layerVersion++;
-                          const versionedId = `${flowmapConfig.id}-v${layerVersion}`;
-                          layerProps.id = versionedId;
-
-                          console.log('[MapGL Settings Change] Creating new layer (clustering changed):', {
-                            id: versionedId,
-                            version: layerVersion,
-                            reason: 'clustering settings changed'
-                          });
-
-                          updatedLayer = new FlowmapLayer(layerProps);
-
-                          if (map._deckgl && map._flowmapLayers) {
-                            // Remove old versions
-                            map._flowmapLayers = map._flowmapLayers.filter(l => !l.id.startsWith(flowmapConfig.id));
-                            map._flowmapLayers.push(updatedLayer);
-
-                            map._deckgl.setProps({ layers: [...map._flowmapLayers] });
-                            console.log('[MapGL Settings Change] ✓ Layer recreated');
+                          // Update CSS blending mode (no layer recreation needed)
+                          try {
+                            updateDeckEffects(newState.darkMode);
+                          } catch (e) {
+                            console.error("[MapGL] updateDeckEffects failed:", e);
                           }
-                        } else {
-                          // APPROACH 2: Update existing layer props (smooth, no flicker)
-                          layerProps.id = flowmapConfig.id; // Keep same ID
-                          layerProps.updateTriggers = {
-                            getFlowMagnitude: [newState.fadeEnabled, newState.fadeAmount, newState.fadeOpacityEnabled],
-                            all: [
-                              newState.darkMode,
-                              newState.colorScheme,
-                              newState.opacity,
-                              newState.animationEnabled,
-                              newState.fadeEnabled,
-                              flowmapConfig.blendModeHack,
-                              newState.adaptiveScalesEnabled,
-                              newState.locationsEnabled,
-                              newState.locationTotalsEnabled,
-                              newState.locationLabelsEnabled,
-                              newState.maxTopFlowsDisplayNum
-                            ]
-                          };
 
-                          console.log('[MapGL Settings Change] Updating existing layer props (smooth):', {
-                            id: flowmapConfig.id,
-                            changed: Object.keys(newState).filter(k => previousState[k] !== newState[k])
-                          });
+                          // Determine if we need layer recreation (versioned ID) or just prop update
+                          const needsRecreation =
+                            previousState.clusteringEnabled !== newState.clusteringEnabled ||
+                            previousState.clusteringMethod !== newState.clusteringMethod ||
+                            previousState.clusteringAuto !== newState.clusteringAuto ||
+                            (previousState.clusteringLevel !== newState.clusteringLevel && !newState.clusteringAuto) ||
+                            previousState.darkMode !== newState.darkMode ||
+                            previousWebglBlendMode !== newState.webglBlendMode;
 
-                          updatedLayer = new FlowmapLayer(layerProps);
+                          console.log('[MapGL Settings Change] Needs recreation:', needsRecreation);
 
-                          if (map._deckgl && map._flowmapLayers) {
-                            // Replace layer with same ID
-                            const index = map._flowmapLayers.findIndex(l =>
-                              l.id === flowmapConfig.id || l.id.startsWith(flowmapConfig.id)
-                            );
-                            if (index !== -1) {
-                              map._flowmapLayers[index] = updatedLayer;
-                            } else {
+                          const layerProps = getLayerProps(newState);
+
+                          // GLOW FIX: If glow mode is active, ensure opacity is low enough to see the effect
+                          // and use numeric literals to avoid any scope issues with GL constants
+                          if (newState.webglBlendMode) {
+                            // [SRC_ALPHA, ONE] = [770, 1]
+                            layerProps.parameters = {
+                              blend: true,
+                              blendFunc: [770, 1],
+                              blendEquation: 32774, // FUNC_ADD
+                              depthTest: false
+                            };
+                            // Force lower opacity for better glow effect if user left it at 1.0
+                            // But respect user choice if they really want it.
+                            // Actually, let's not force opacity, but log it.
+                            console.log("[MapGL] Glow mode active. Opacity:", layerProps.opacity);
+                          }
+
+                          let updatedLayer;
+
+                          if (needsRecreation) {
+                            layerVersion++;
+                            const versionedId = `${flowmapConfig.id}-v${layerVersion}`;
+                            layerProps.id = versionedId;
+
+                            console.log('[MapGL Settings Change] Recreating layer:', versionedId);
+                            updatedLayer = new FlowmapLayer(layerProps);
+
+                            if (map._deckgl && map._flowmapLayers) {
+                              map._flowmapLayers = map._flowmapLayers.filter(l => !l.id.startsWith(flowmapConfig.id));
                               map._flowmapLayers.push(updatedLayer);
+                              map._deckgl.setProps({ layers: [...map._flowmapLayers] });
+                              console.log('[MapGL Settings Change] ✓ Layer recreated');
                             }
+                          } else {
+                            layerProps.id = flowmapConfig.id;
+                            // Ensure updateTriggers are set explicitly
+                            layerProps.updateTriggers = {
+                              getFlowMagnitude: [newState.fadeEnabled, newState.fadeAmount, newState.fadeOpacityEnabled],
+                              all: [
+                                newState.darkMode,
+                                newState.colorScheme,
+                                newState.opacity,
+                                newState.animationEnabled,
+                                newState.fadeEnabled,
+                                flowmapConfig.cssBlendMode,
+                                flowmapConfig.webglBlendMode,
+                                newState.adaptiveScalesEnabled,
+                                newState.locationsEnabled,
+                                newState.locationTotalsEnabled,
+                                newState.locationLabelsEnabled,
+                                newState.maxTopFlowsDisplayNum
+                              ]
+                            };
 
-                            map._deckgl.setProps({ layers: [...map._flowmapLayers] });
-                            console.log('[MapGL Settings Change] ✓ Layer props updated (no recreation)');
+                            console.log('[MapGL Settings Change] Updating props for:', layerProps.id);
+                            updatedLayer = new FlowmapLayer(layerProps);
+
+                            if (map._deckgl && map._flowmapLayers) {
+                              const index = map._flowmapLayers.findIndex(l =>
+                                l.id === flowmapConfig.id || l.id.startsWith(flowmapConfig.id)
+                              );
+                              if (index !== -1) {
+                                map._flowmapLayers[index] = updatedLayer;
+                              } else {
+                                map._flowmapLayers.push(updatedLayer);
+                              }
+                              map._deckgl.setProps({ layers: [...map._flowmapLayers] });
+                              console.log('[MapGL Settings Change] ✓ Props updated');
+                            }
                           }
+
+                          // Update previous state
+                          previousState = { ...newState };
+
+                          // Trigger repaint
+                          setTimeout(() => {
+                            map.triggerRepaint();
+                          }, 10);
+
+                        } catch (err) {
+                          console.error("[MapGL] Settings Callback Error:", err);
                         }
-
-                        // Update previous state
-                        previousState = { ...newState };
-
-                        // Trigger repaint
-                        setTimeout(() => {
-                          map.triggerRepaint();
-                        }, 10);
                       }
                     );
 
