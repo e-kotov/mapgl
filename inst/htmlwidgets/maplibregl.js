@@ -1408,6 +1408,7 @@ HTMLWidgets.widget({
                       id: flowmapConfig.id,
                       data: flowmapConfig.data,
                       pickable: true,
+                      visible: flowmapConfig.visibility !== 'none',
                       opacity: opacity,
                       outlineWidth: settings.outlineWidth !== undefined ? settings.outlineWidth : 0,
                       // WebGL blend parameters
@@ -2564,6 +2565,35 @@ HTMLWidgets.widget({
 
             // Add the layers control if provided
             if (x.layers_control) {
+
+              // Helper functions for layer visibility (Mapbox GL layers + Flowmap flowmap layers)
+              const getLayerVisibility = (layerId) => {
+                if (map.getLayer(layerId)) {
+                  const visibility = map.getLayoutProperty(layerId, 'visibility');
+                  return visibility === undefined ? 'visible' : visibility;
+                } else if (map._flowmapLayers) {
+                  const flowLayer = map._flowmapLayers.find(l => l.id === layerId);
+                  if (flowLayer) {
+                    return flowLayer.props.visible !== false ? 'visible' : 'none';
+                  }
+                }
+                return 'none';
+              };
+
+              const setLayerVisibility = (layerId, visibility) => {
+                if (map.getLayer(layerId)) {
+                  map.setLayoutProperty(layerId, 'visibility', visibility);
+                } else if (map._flowmapLayers && map._deckgl) {
+                  const index = map._flowmapLayers.findIndex(l => l.id === layerId);
+                  if (index !== -1) {
+                    const layer = map._flowmapLayers[index];
+                    const newLayer = layer.clone({ visible: visibility === 'visible' });
+                    map._flowmapLayers[index] = newLayer;
+                    map._deckgl.setProps({ layers: [...map._flowmapLayers] });
+                  }
+                }
+              };
+
               const layersControl = document.createElement("div");
               layersControl.id = x.layers_control.control_id;
               layersControl.className = x.layers_control.collapsible
@@ -2658,10 +2688,7 @@ HTMLWidgets.widget({
 
                   // Check if the first layer's visibility is set to "none" initially
                   const firstLayerId = layerIds[0];
-                  const initialVisibility = map.getLayoutProperty(
-                    firstLayerId,
-                    "visibility",
-                  );
+                  const initialVisibility = getLayerVisibility(firstLayerId);
                   link.className = initialVisibility === "none" ? "" : "active";
 
                   // Also hide any associated legends if the layer is initially hidden
@@ -2685,15 +2712,12 @@ HTMLWidgets.widget({
                       this.getAttribute("data-layer-ids"),
                     );
                     const firstLayerId = layerIds[0];
-                    const visibility = map.getLayoutProperty(
-                      firstLayerId,
-                      "visibility",
-                    );
+                    const visibility = getLayerVisibility(firstLayerId);
 
                     // Toggle visibility for all layer IDs in the group
                     if (visibility === "visible") {
                       layerIds.forEach((layerId) => {
-                        map.setLayoutProperty(layerId, "visibility", "none");
+                        setLayerVisibility(layerId, "none");
                         // Hide associated legends
                         const associatedLegends = document.querySelectorAll(
                           `.mapboxgl-legend[data-layer-id="${layerId}"]`,
@@ -2705,7 +2729,7 @@ HTMLWidgets.widget({
                       this.className = "";
                     } else {
                       layerIds.forEach((layerId) => {
-                        map.setLayoutProperty(layerId, "visibility", "visible");
+                        setLayerVisibility(layerId, "visible");
                         // Show associated legends
                         const associatedLegends = document.querySelectorAll(
                           `.mapboxgl-legend[data-layer-id="${layerId}"]`,
@@ -2734,10 +2758,7 @@ HTMLWidgets.widget({
                   link.textContent = layerId;
 
                   // Check if the layer visibility is set to "none" initially
-                  const initialVisibility = map.getLayoutProperty(
-                    layerId,
-                    "visibility",
-                  );
+                  const initialVisibility = getLayerVisibility(layerId);
                   link.className = initialVisibility === "none" ? "" : "active";
 
                   // Also hide any associated legends if the layer is initially hidden
@@ -2756,14 +2777,11 @@ HTMLWidgets.widget({
                     e.preventDefault();
                     e.stopPropagation();
 
-                    const visibility = map.getLayoutProperty(
-                      clickedLayer,
-                      "visibility",
-                    );
+                    const visibility = getLayerVisibility(clickedLayer);
 
-                    // Toggle layer visibility by changing the layout object's visibility property
+                    // Toggle layer visibility
                     if (visibility === "visible") {
-                      map.setLayoutProperty(clickedLayer, "visibility", "none");
+                      setLayerVisibility(clickedLayer, "none");
                       this.className = "";
 
                       // Hide associated legends
@@ -2775,11 +2793,7 @@ HTMLWidgets.widget({
                       });
                     } else {
                       this.className = "active";
-                      map.setLayoutProperty(
-                        clickedLayer,
-                        "visibility",
-                        "visible",
-                      );
+                      setLayerVisibility(clickedLayer, "visible");
 
                       // Show associated legends
                       const associatedLegends = document.querySelectorAll(

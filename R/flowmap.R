@@ -15,33 +15,40 @@
 #'   - origin: origin location id (must match locations$id)
 #'   - dest: destination location id (must match locations$id)
 #'   - count: flow magnitude/weight
-#' @param color_scheme Color scheme for flows. Can be a preset name (e.g., "Teal", "Purple",
+#' @param flow_color_scheme Color scheme for flows. Can be a preset name (e.g., "Teal", "Purple",
 #'   "Blue") or a vector of color hex codes. Default is "Teal".
-#' @param dark_mode Whether to use dark mode styling. Default is TRUE.
-#' @param animation_enabled Whether to animate flow lines. Default is FALSE.
-#' @param fade_enabled Whether to fade flow lines by magnitude. Default is TRUE.
-#' @param fade_amount Fade amount (0-100). Default is 50.
-#' @param fade_opacity_enabled Whether fade affects opacity. Default is FALSE.
-#' @param locations_enabled Whether to show location circles. Default is TRUE.
-#' @param location_totals_enabled Whether location circles scale by totals. Default is TRUE.
-#' @param location_labels_enabled Whether to show location labels. Default is FALSE.
-#' @param clustering_enabled Whether to enable location clustering. Default is TRUE.
-#' @param clustering_auto Whether to auto-adjust clustering level. Default is TRUE.
-#' @param clustering_level Manual clustering zoom level (0-20). Only used if clustering_auto is FALSE.
-#' @param adaptive_scales_enabled Whether to use adaptive scaling. Default is TRUE.
-#' @param highlight_color Color for highlighting on hover. Default is "#ff9b29".
-#' @param max_top_flows Maximum number of top flows to display. Default is 5000.
-#' @param opacity Overall opacity of the flowmap layer (0-1). Default is 1.0.
-#' @param outline_width Width of the flow line outline in pixels. Default is 0.
-#' @param clustering_method Clustering algorithm to use. Either "HCA" (Hierarchical Cluster Analysis) or "H3" (H3 hexagonal hierarchical spatial index). Default is "HCA".
-#' @param show_settings_menu Whether to display an interactive settings menu on the map for real-time customization. Useful for exploring different visual configurations. Default is FALSE.
-#' @param dim_basemap Whether to apply CSS filters to dim the basemap and make the flowmap stand out. In dark mode, applies grayscale, invert, and color adjustments with reduced opacity. In light mode, applies grayscale with reduced opacity. Matches the visual style of flowmap.gl examples. Default is FALSE.
-#' @param blend_mode Blending mode. One of "normal", "screen", or "glow".
+#' @param flow_dark_mode Whether to use dark mode styling. Default is TRUE.
+#' @param flow_animation Whether to animate flow lines. Default is FALSE.
+#' @param flow_fade Whether to fade flow lines by magnitude. Default is TRUE.
+#' @param flow_fade_amount Fade amount (0-100). Default is 50.
+#' @param flow_fade_opacity Whether fade affects opacity. Default is FALSE.
+#' @param flow_locations Whether to show location circles. Default is TRUE.
+#' @param flow_location_totals Whether location circles scale by totals. Default is TRUE.
+#' @param flow_location_labels Whether to show location labels. Default is FALSE.
+#' @param flow_clustering Whether to enable location clustering. Default is TRUE.
+#' @param flow_clustering_auto Whether to auto-adjust clustering level. Default is TRUE.
+#' @param flow_clustering_level Manual clustering zoom level (0-20). Only used if flow_clustering_auto is FALSE.
+#' @param flow_clustering_method Clustering algorithm to use. Either "HCA" (Hierarchical Cluster Analysis) or "H3" (H3 hexagonal hierarchical spatial index). Default is "HCA".
+#' @param flow_adaptive_scales Whether to use adaptive scaling. Default is TRUE.
+#' @param flow_highlight_color Color for highlighting on hover. Default is "#ff9b29".
+#' @param flow_max_flows Maximum number of top flows to display. Default is 5000.
+#' @param flow_opacity Overall opacity of the flowmap layer (0-1). Default is 1.0.
+#' @param flow_outline_width Width of the flow line outline in pixels. Default is 0.
+#' @param flow_show_settings Whether to display an interactive settings menu on the map for real-time customization. Useful for exploring different visual configurations. Default is FALSE.
+#' @param flow_dim_basemap Whether to apply CSS filters to dim the basemap and make the flowmap stand out. In dark mode, applies grayscale, invert, and color adjustments with reduced opacity. In light mode, applies grayscale with reduced opacity. Matches the visual style of flowmap.gl examples. Default is FALSE.
+#' @param flow_blend_mode Blending mode. One of "normal", "screen", or "glow".
 #'   - "normal": No special blending (default).
 #'   - "screen": Applies CSS mix-blend-mode to the deck.gl canvas for a screen (dark mode) or darken (light mode) blending effect. This creates a subtle glow where flows overlap.
 #'   - "glow": Applies WebGL blend functions for a more pronounced glow/accumulation effect. Uses `SRC_ALPHA, ONE_MINUS_DST_COLOR` which works best in dark mode with MapLibre. May have rendering issues in Mapbox.
+#' @param visibility Whether this layer is displayed.
+#' @param slot An optional slot for layer order (not currently supported for flowmap layers).
+#' @param min_zoom The minimum zoom level for the layer (not currently supported for flowmap layers).
+#' @param max_zoom The maximum zoom level for the layer (not currently supported for flowmap layers).
+#' @param before_id The name of the layer that this layer appears "before" (not currently supported for flowmap layers).
 #' @param popup A column name from locations or flows to display in a popup on click.
 #' @param tooltip A column name from locations or flows to display in a tooltip on hover.
+#' @param hover_options A named list of options for highlighting features in the layer on hover (not currently supported for flowmap layers).
+#' @param filter An optional filter expression to subset features in the layer (not currently supported for flowmap layers).
 #'
 #' @return The modified map object with the flowmap layer added.
 #' @export
@@ -74,8 +81,8 @@
 #'     id = "flows",
 #'     locations = locations,
 #'     flows = flows,
-#'     color_scheme = "Teal",
-#'     animation_enabled = FALSE
+#'     flow_color_scheme = "Teal",
+#'     flow_animation = FALSE
 #'   )
 #' }
 add_flowmap <- function(
@@ -83,44 +90,51 @@ add_flowmap <- function(
   id,
   locations,
   flows,
-  color_scheme = "Teal",
-  dark_mode = TRUE,
-  animation_enabled = FALSE,
-  fade_enabled = TRUE,
-  fade_amount = 50,
-  fade_opacity_enabled = FALSE,
-  locations_enabled = TRUE,
-  location_totals_enabled = TRUE,
-  location_labels_enabled = FALSE,
-  clustering_enabled = TRUE,
-  clustering_auto = TRUE,
-  clustering_level = NULL,
-  adaptive_scales_enabled = TRUE,
-  highlight_color = "#ff9b29",
-  max_top_flows = 5000,
-  opacity = 1,
-  outline_width = 0,
-  clustering_method = "HCA",
-  show_settings_menu = FALSE,
-  dim_basemap = NULL,
-  blend_mode = c("normal", "screen", "glow"),
+  flow_color_scheme = "Teal",
+  flow_dark_mode = TRUE,
+  flow_animation = FALSE,
+  flow_fade = TRUE,
+  flow_fade_amount = 50,
+  flow_fade_opacity = FALSE,
+  flow_locations = TRUE,
+  flow_location_totals = TRUE,
+  flow_location_labels = FALSE,
+  flow_clustering = TRUE,
+  flow_clustering_auto = TRUE,
+  flow_clustering_level = NULL,
+  flow_clustering_method = "HCA",
+  flow_adaptive_scales = TRUE,
+  flow_highlight_color = "#ff9b29",
+  flow_max_flows = 5000,
+  flow_opacity = 1,
+  flow_outline_width = 0,
+  flow_show_settings = FALSE,
+  flow_dim_basemap = NULL,
+  flow_blend_mode = c("normal", "screen", "glow"),
+  visibility = "visible",
+  slot = NULL,
+  min_zoom = NULL,
+  max_zoom = NULL,
+  before_id = NULL,
   popup = NULL,
-  tooltip = NULL
+  tooltip = NULL,
+  hover_options = NULL,
+  filter = NULL
 ) {
-  blend_mode <- match.arg(blend_mode)
+  flow_blend_mode <- match.arg(flow_blend_mode)
 
   # Auto-dim basemap if blending is enabled and user hasn't explicitly set it
-  if (is.null(dim_basemap)) {
-    dim_basemap <- blend_mode != "normal"
+  if (is.null(flow_dim_basemap)) {
+    flow_dim_basemap <- flow_blend_mode != "normal"
   }
 
   # Map simplified mode to internal booleans
-  css_blend_mode <- blend_mode == "screen"
-  webgl_blend_mode <- blend_mode == "glow"
+  css_blend_mode <- flow_blend_mode == "screen"
+  webgl_blend_mode <- flow_blend_mode == "glow"
 
-  if (webgl_blend_mode && !dark_mode) {
+  if (webgl_blend_mode && !flow_dark_mode) {
     warning(
-      "blend_mode = 'glow' is intended for use with dark_mode = TRUE. Colors may appear inverted or washed out on light backgrounds."
+      "flow_blend_mode = 'glow' is intended for use with flow_dark_mode = TRUE. Colors may appear inverted or washed out on light backgrounds."
     )
   }
 
@@ -134,17 +148,17 @@ add_flowmap <- function(
   }
 
   # Validate opacity
-  if (!is.numeric(opacity) || opacity < 0 || opacity > 1) {
-    stop("opacity must be a number between 0 and 1")
+  if (!is.numeric(flow_opacity) || flow_opacity < 0 || flow_opacity > 1) {
+    stop("flow_opacity must be a number between 0 and 1")
   }
 
   # Validate clustering_method
-  if (!clustering_method %in% c("HCA", "H3")) {
-    stop("clustering_method must be either 'HCA' or 'H3'")
+  if (!flow_clustering_method %in% c("HCA", "H3")) {
+    stop("flow_clustering_method must be either 'HCA' or 'H3'")
   }
 
   # Validate color_scheme if string
-  if (is.character(color_scheme) && length(color_scheme) == 1) {
+  if (is.character(flow_color_scheme) && length(flow_color_scheme) == 1) {
     valid_schemes <- c(
       "Blues",
       "BluGrn",
@@ -191,10 +205,10 @@ add_flowmap <- function(
       "YlOrBr",
       "YlOrRd"
     )
-    if (!color_scheme %in% valid_schemes) {
+    if (!flow_color_scheme %in% valid_schemes) {
       warning(
         "Unknown color scheme '",
-        color_scheme,
+        flow_color_scheme,
         "'. ",
         "Valid schemes are: ",
         paste(valid_schemes, collapse = ", ")
@@ -305,11 +319,6 @@ add_flowmap <- function(
   # The JavaScript code uses HTMLWidgets.dataframeToD3() to efficiently convert
   # columnar format to the row-oriented array that flowmap.gl expects:
   # [{"id":"A","lat":40.7}, {"id":"B","lat":34}]
-  #
-  # This is MUCH faster than using purrr::transpose() in R because:
-  # 1. R side: Minimal processing, just pass vectors
-  # 2. Network: Columnar JSON is smaller (keys written once, not N times)
-  # 3. Browser: V8 engine is highly optimized for array operations
 
   # Select only required columns for locations
   locations_cols <- c("id", "lat", "lon", "name")
@@ -355,36 +364,39 @@ add_flowmap <- function(
       flows = flows_subset
     ),
     settings = list(
-      colorScheme = color_scheme,
-      darkMode = dark_mode,
-      opacity = opacity,
-      outlineWidth = outline_width,
-      animationEnabled = animation_enabled,
-      fadeEnabled = fade_enabled,
-      fadeAmount = fade_amount,
-      fadeOpacityEnabled = fade_opacity_enabled,
-      locationsEnabled = locations_enabled,
-      locationTotalsEnabled = location_totals_enabled,
-      locationLabelsEnabled = location_labels_enabled,
-      clusteringEnabled = clustering_enabled,
-      clusteringAuto = clustering_auto,
-      clusteringMethod = clustering_method,
-      clusteringLevel = clustering_level,
-      adaptiveScalesEnabled = adaptive_scales_enabled,
-      highlightColor = highlight_color,
-      maxTopFlowsDisplayNum = max_top_flows
+      colorScheme = flow_color_scheme,
+      darkMode = flow_dark_mode,
+      opacity = flow_opacity,
+      outlineWidth = flow_outline_width,
+      animationEnabled = flow_animation,
+      fadeEnabled = flow_fade,
+      fadeAmount = flow_fade_amount,
+      fadeOpacityEnabled = flow_fade_opacity,
+      locationsEnabled = flow_locations,
+      locationTotalsEnabled = flow_location_totals,
+      locationLabelsEnabled = flow_location_labels,
+      clusteringEnabled = flow_clustering,
+      clusteringAuto = flow_clustering_auto,
+      clusteringMethod = flow_clustering_method,
+      clusteringLevel = flow_clustering_level,
+      adaptiveScalesEnabled = flow_adaptive_scales,
+      highlightColor = flow_highlight_color,
+      maxTopFlowsDisplayNum = flow_max_flows
     ),
-    showSettingsMenu = show_settings_menu,
-    dimBasemap = dim_basemap,
+    showSettingsMenu = flow_show_settings,
+    dimBasemap = flow_dim_basemap,
     cssBlendMode = css_blend_mode,
     webglBlendMode = webgl_blend_mode,
+    visibility = visibility,
+    minZoom = min_zoom,
+    maxZoom = max_zoom,
     popup = popup,
     tooltip = tooltip
   )
 
   # Add clustering level if specified
-  if (!is.null(clustering_level)) {
-    flowmap_config$settings$clusteringLevel <- clustering_level
+  if (!is.null(flow_clustering_level)) {
+    flowmap_config$settings$clusteringLevel <- flow_clustering_level
   }
 
   # Initialize flowmaps list if it doesn't exist
