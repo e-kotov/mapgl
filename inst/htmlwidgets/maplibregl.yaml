@@ -67,6 +67,11 @@ dependencies:
     src: "htmlwidgets"
     script:
       - "turf-operations.js"
+  - name: html2canvas
+    version: "1.4.1"
+    src: "htmlwidgets/lib/html2canvas"
+    script:
+      - "html2canvas.min.js"
   - name: flowmap-gl
     version: "8.0.2"
     src: "htmlwidgets/lib/flowmap-gl"
