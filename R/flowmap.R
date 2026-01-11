@@ -399,6 +399,10 @@ add_flowmap <- function(
     flowmap_config$settings$clusteringLevel <- flow_clustering_level
   }
 
+  # Add layer entry for layer control discovery
+  layer_entry <- list(id = id, type = "flowmap")
+  map$x$layers <- c(map$x$layers, list(layer_entry))
+
   # Initialize flowmaps list if it doesn't exist
   if (is.null(map$x$flowmaps)) {
     map$x$flowmaps <- list()

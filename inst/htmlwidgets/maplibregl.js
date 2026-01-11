@@ -2699,7 +2699,12 @@ HTMLWidgets.widget({
                             if (map._deckgl && map._flowmapLayers) {
                               map._flowmapLayers = map._flowmapLayers.filter(l => !l.id.startsWith(flowmapConfig.id));
                               map._flowmapLayers.push(updatedLayer);
-                              map._deckgl.setProps({ layers: [...map._flowmapLayers] });
+                              // Respect visibility from layer control
+                              const visibleLayers = map._flowmapLayers.filter(layer => {
+                                const baseId = layer.id.split('-v')[0];
+                                return !map._flowmapVisibility || map._flowmapVisibility[baseId] !== false;
+                              });
+                              map._deckgl.setProps({ layers: visibleLayers });
                               console.log('[MapGL Settings Change] ✓ Layer recreated');
                             }
                           } else {
@@ -2735,7 +2740,12 @@ HTMLWidgets.widget({
                               } else {
                                 map._flowmapLayers.push(updatedLayer);
                               }
-                              map._deckgl.setProps({ layers: [...map._flowmapLayers] });
+                              // Respect visibility from layer control
+                              const visibleLayers = map._flowmapLayers.filter(layer => {
+                                const baseId = layer.id.split('-v')[0];
+                                return !map._flowmapVisibility || map._flowmapVisibility[baseId] !== false;
+                              });
+                              map._deckgl.setProps({ layers: visibleLayers });
                               console.log('[MapGL Settings Change] ✓ Props updated');
                             }
                           }
@@ -2780,7 +2790,12 @@ HTMLWidgets.widget({
                     }
                   });
 
-                  map._deckgl.setProps({ layers: [...map._flowmapLayers] });
+                  // Respect visibility from layer control
+                  const visibleLayers = map._flowmapLayers.filter(layer => {
+                    const baseId = layer.id.split('-v')[0];
+                    return !map._flowmapVisibility || map._flowmapVisibility[baseId] !== false;
+                  });
+                  map._deckgl.setProps({ layers: visibleLayers });
                   console.log("Flowmap layers added to Standalone Deck.gl:", flowmapLayers.length);
                 } catch (error) {
                   console.error("Failed to set flowmap layers on overlay:", error);
@@ -3713,14 +3728,51 @@ HTMLWidgets.widget({
                   e.preventDefault();
                   e.stopPropagation();
 
-                  const layerIds = JSON.parse(
-                    this.getAttribute("data-layer-ids"),
-                  );
-                  const firstLayerId = layerIds[0];
-                  const visibility = map.getLayoutProperty(
-                    firstLayerId,
-                    "visibility",
-                  );
+                    const layerIds = JSON.parse(
+                      this.getAttribute("data-layer-ids"),
+                    );
+                    const layerType = this.getAttribute("data-layer-type");
+                    const firstLayerId = layerIds[0];
+
+                    if (layerType === "flowmap") {
+                      try {
+                        // Handle flowmap visibility
+                        if (!map._flowmapVisibility) {
+                          map._flowmapVisibility = {};
+                        }
+
+                        const currentVisibility = map._flowmapVisibility[firstLayerId];
+                        const isCurrentlyVisible = currentVisibility !== false;
+                        const nextVisibility = !isCurrentlyVisible;
+
+                        console.log(`[MapGL] Toggling flowmap ${firstLayerId}: ${isCurrentlyVisible} -> ${nextVisibility}`);
+
+                        map._flowmapVisibility[firstLayerId] = nextVisibility;
+                        this.className = nextVisibility ? "active" : "";
+
+                        // Update deck.gl layers by filtering based on visibility
+                        if (map._deckgl && map._flowmapLayers) {
+                          // Check if layers need cloning to avoid lifecycle issues
+                          const visibleLayers = map._flowmapLayers.filter(layer => {
+                            // Use safer replacement for version suffix
+                            const baseId = layer.id.replace(/-v\d+$/, '');
+                            return map._flowmapVisibility[baseId] !== false;
+                          }).map(l => l.clone ? l.clone() : new l.constructor(l.props));
+
+                          map._deckgl.setProps({ layers: visibleLayers });
+
+                          // Force repaint
+                          if (map.triggerRepaint) map.triggerRepaint();
+                        }
+                      } catch (err) {
+                        console.error("[MapGL] Error toggling flowmap:", err);
+                      }
+                    } else {
+                      // Handle regular layer visibility
+                      const visibility = map.getLayoutProperty(
+                        firstLayerId,
+                        "visibility",
+                      );
 
                   // Toggle visibility for all layer IDs in the group
                   if (visibility === "visible") {
@@ -3747,6 +3799,7 @@ HTMLWidgets.widget({
                       });
                     });
                     this.className = "active";
+                      }
                   }
                 };
 
@@ -6687,10 +6740,22 @@ if (HTMLWidgets.shinyMode) {
 
             // Check if the first layer's visibility is set to "none" initially
             const firstLayerId = layerIds[0];
-            const initialVisibility = map.getLayoutProperty(
-              firstLayerId,
-              "visibility",
-            );
+            let initialVisibility;
+
+            if (config.type === "flowmap") {
+              // For flowmaps, check if layer exists in _flowmapVisibility
+              if (!map._flowmapVisibility) {
+                map._flowmapVisibility = {};
+              }
+              // Default to visible if not explicitly set
+              initialVisibility = map._flowmapVisibility[firstLayerId] === false ? "none" : "visible";
+            } else {
+              // For regular layers, use getLayoutProperty
+              initialVisibility = map.getLayoutProperty(
+                firstLayerId,
+                "visibility",
+              );
+            }
             link.className = initialVisibility === "none" ? "" : "active";
 
             // Also hide any associated legends if the layer is initially hidden
@@ -6711,11 +6776,42 @@ if (HTMLWidgets.shinyMode) {
               e.stopPropagation();
 
               const layerIds = JSON.parse(this.getAttribute("data-layer-ids"));
+              const layerType = this.getAttribute("data-layer-type");
               const firstLayerId = layerIds[0];
-              const visibility = map.getLayoutProperty(
-                firstLayerId,
-                "visibility",
-              );
+
+              if (layerType === "flowmap") {
+                // Handle flowmap visibility
+                if (!map._flowmapVisibility) {
+                  map._flowmapVisibility = {};
+                }
+
+                const isVisible = map._flowmapVisibility[firstLayerId] !== false;
+
+                if (isVisible) {
+                  // Hide the flowmap
+                  map._flowmapVisibility[firstLayerId] = false;
+                  this.className = "";
+                } else {
+                  // Show the flowmap
+                  map._flowmapVisibility[firstLayerId] = true;
+                  this.className = "active";
+                }
+
+                // Update deck.gl layers by filtering based on visibility
+                if (map._deckgl && map._flowmapLayers) {
+                  const visibleLayers = map._flowmapLayers.filter(layer => {
+                    // Extract base ID (remove version suffix like "-v1")
+                    const baseId = layer.id.split('-v')[0];
+                    return map._flowmapVisibility[baseId] !== false;
+                  });
+                  map._deckgl.setProps({ layers: visibleLayers });
+                }
+              } else {
+                // Handle regular layer visibility
+                const visibility = map.getLayoutProperty(
+                  firstLayerId,
+                  "visibility",
+                );
 
               // Toggle visibility for all layer IDs in the group
               if (visibility === "visible") {
@@ -6742,6 +6838,7 @@ if (HTMLWidgets.shinyMode) {
                   });
                 });
                 this.className = "active";
+                }
               }
             };
 
