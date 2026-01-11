@@ -2222,12 +2222,28 @@ HTMLWidgets.widget({
                 map._flowmapGUIs = {};
               }
 
-              // Initialize STANDALONE deck.gl (NOT MapboxOverlay) for proper CSS blend mode support
-              // This matches the official flowmap.gl example architecture
-              if (!map._deckgl) {
+              // Check if any flowmap requires interleaved mode (for layer ordering via beforeId)
+              const needsInterleaved = x.flowmaps.some(fm => fm.interleaved && fm.beforeId);
+
+              // Initialize deck.gl: use MapboxOverlay for interleaved mode, standalone Deck otherwise
+              if (!map._deckgl && !map._deckOverlay) {
                 try {
-                  const { Deck } = FlowmapGL;
-                  const container = map.getContainer();
+                  if (needsInterleaved) {
+                    // Use MapboxOverlay with interleaved: true for layer ordering support
+                    const { MapboxOverlay } = FlowmapGL;
+
+                    map._deckOverlay = new MapboxOverlay({
+                      interleaved: true,
+                      layers: []
+                    });
+                    map.addControl(map._deckOverlay);
+                    map._deckIsInterleaved = true;
+
+                    console.log('[MapGL] MapboxOverlay initialized with interleaved: true for layer ordering');
+                  } else {
+                    // Use standalone Deck for CSS blend mode support (renders on separate canvas)
+                    const { Deck } = FlowmapGL;
+                    const container = map.getContainer();
 
                   // Create a container div for deck.gl canvas
                   const deckContainer = document.createElement('div');
@@ -2290,15 +2306,21 @@ HTMLWidgets.widget({
                     });
                   };
 
-                  map.on('move', syncViewState);
-                  map.on('moveend', syncViewState);
+                    map.on('move', syncViewState);
+                    map.on('moveend', syncViewState);
+
+                    map._deckIsInterleaved = false;
+
+                    console.log('[MapGL] Standalone Deck.gl initialized for CSS blend mode support');
+                  }
 
                   // Forward mouse move to deck.gl for picking/tooltips
-                  // (Required because deck container has pointer-events: none)
+                  // (Required because deck container has pointer-events: none in standalone mode)
                   const onMapMouseMove = (e) => {
-                    if (!map._deckgl) return;
+                    const deckInstance = map._deckgl || (map._deckOverlay && map._deckOverlay._deck);
+                    if (!deckInstance) return;
                     const { x, y } = e.point;
-                    const info = map._deckgl.pickObject({ x, y, radius: 2 });
+                    const info = deckInstance.pickObject({ x, y, radius: 2 });
 
                     map.getCanvas().style.cursor = info ? 'pointer' : '';
 
@@ -2321,8 +2343,6 @@ HTMLWidgets.widget({
                     map._hasDeckMoveListener = true;
                   }
 
-                  console.log('[MapGL] Standalone Deck.gl initialized for CSS blend mode support');
-
                   // Cleanup function for when map is destroyed
                   map.on('remove', function () {
                     if (map._flowmapGUIs) {
@@ -2337,13 +2357,17 @@ HTMLWidgets.widget({
                       map._deckgl.finalize();
                       map._deckgl = null;
                     }
+                    if (map._deckOverlay) {
+                      map.removeControl(map._deckOverlay);
+                      map._deckOverlay = null;
+                    }
                     if (map._deckContainer) {
                       map._deckContainer.remove();
                       map._deckContainer = null;
                     }
                   });
                 } catch (error) {
-                  console.error('Failed to initialize standalone Deck.gl:', error);
+                  console.error('Failed to initialize deck.gl:', error);
                   return;
                 }
               }
@@ -2400,6 +2424,8 @@ HTMLWidgets.widget({
                     return {
                       id: flowmapConfig.id,
                       data: flowmapConfig.data,
+                      // beforeId for layer ordering in interleaved mode (MapboxOverlay)
+                      beforeId: flowmapConfig.interleaved ? flowmapConfig.beforeId : undefined,
                       pickable: true,
                       visible: flowmapConfig.visibility !== 'none',
                       opacity: opacity,
@@ -2696,7 +2722,7 @@ HTMLWidgets.widget({
                             console.log('[MapGL Settings Change] Recreating layer:', versionedId);
                             updatedLayer = new FlowmapLayer(layerProps);
 
-                            if (map._deckgl && map._flowmapLayers) {
+                            if ((map._deckgl || map._deckOverlay) && map._flowmapLayers) {
                               map._flowmapLayers = map._flowmapLayers.filter(l => !l.id.startsWith(flowmapConfig.id));
                               map._flowmapLayers.push(updatedLayer);
                               // Respect visibility from layer control
@@ -2704,7 +2730,7 @@ HTMLWidgets.widget({
                                 const baseId = layer.id.split('-v')[0];
                                 return !map._flowmapVisibility || map._flowmapVisibility[baseId] !== false;
                               });
-                              map._deckgl.setProps({ layers: visibleLayers });
+                              (map._deckgl || map._deckOverlay).setProps({ layers: visibleLayers });
                               console.log('[MapGL Settings Change] ✓ Layer recreated');
                             }
                           } else {
@@ -2731,7 +2757,7 @@ HTMLWidgets.widget({
                             console.log('[MapGL Settings Change] Updating props for:', layerProps.id);
                             updatedLayer = new FlowmapLayer(layerProps);
 
-                            if (map._deckgl && map._flowmapLayers) {
+                            if ((map._deckgl || map._deckOverlay) && map._flowmapLayers) {
                               const index = map._flowmapLayers.findIndex(l =>
                                 l.id === flowmapConfig.id || l.id.startsWith(flowmapConfig.id)
                               );
@@ -2745,7 +2771,7 @@ HTMLWidgets.widget({
                                 const baseId = layer.id.split('-v')[0];
                                 return !map._flowmapVisibility || map._flowmapVisibility[baseId] !== false;
                               });
-                              map._deckgl.setProps({ layers: visibleLayers });
+                              (map._deckgl || map._deckOverlay).setProps({ layers: visibleLayers });
                               console.log('[MapGL Settings Change] ✓ Props updated');
                             }
                           }
@@ -2773,7 +2799,7 @@ HTMLWidgets.widget({
               });
 
               // Update overlay with all flowmap layers
-              if (flowmapLayers.length > 0 && map._deckgl) {
+              if (flowmapLayers.length > 0 && (map._deckgl || map._deckOverlay)) {
                 try {
                   // Initialize or update our local cache of layers
                   if (!map._flowmapLayers) {
@@ -2795,8 +2821,15 @@ HTMLWidgets.widget({
                     const baseId = layer.id.split('-v')[0];
                     return !map._flowmapVisibility || map._flowmapVisibility[baseId] !== false;
                   });
-                  map._deckgl.setProps({ layers: visibleLayers });
-                  console.log("Flowmap layers added to Standalone Deck.gl:", flowmapLayers.length);
+
+                  // Set layers on whichever deck instance is active
+                  if (map._deckgl) {
+                    map._deckgl.setProps({ layers: visibleLayers });
+                    console.log("Flowmap layers added to Standalone Deck.gl:", flowmapLayers.length);
+                  } else if (map._deckOverlay) {
+                    map._deckOverlay.setProps({ layers: visibleLayers });
+                    console.log("Flowmap layers added to MapboxOverlay (interleaved):", flowmapLayers.length);
+                  }
                 } catch (error) {
                   console.error("Failed to set flowmap layers on overlay:", error);
                 }
@@ -3751,7 +3784,7 @@ HTMLWidgets.widget({
                         this.className = nextVisibility ? "active" : "";
 
                         // Update deck.gl layers by filtering based on visibility
-                        if (map._deckgl && map._flowmapLayers) {
+                        if ((map._deckgl || map._deckOverlay) && map._flowmapLayers) {
                           // Check if layers need cloning to avoid lifecycle issues
                           const visibleLayers = map._flowmapLayers.filter(layer => {
                             // Use safer replacement for version suffix
@@ -3759,7 +3792,7 @@ HTMLWidgets.widget({
                             return map._flowmapVisibility[baseId] !== false;
                           }).map(l => l.clone ? l.clone() : new l.constructor(l.props));
 
-                          map._deckgl.setProps({ layers: visibleLayers });
+                          (map._deckgl || map._deckOverlay).setProps({ layers: visibleLayers });
 
                           // Force repaint
                           if (map.triggerRepaint) map.triggerRepaint();
@@ -6798,13 +6831,13 @@ if (HTMLWidgets.shinyMode) {
                 }
 
                 // Update deck.gl layers by filtering based on visibility
-                if (map._deckgl && map._flowmapLayers) {
+                if ((map._deckgl || map._deckOverlay) && map._flowmapLayers) {
                   const visibleLayers = map._flowmapLayers.filter(layer => {
                     // Extract base ID (remove version suffix like "-v1")
                     const baseId = layer.id.split('-v')[0];
                     return map._flowmapVisibility[baseId] !== false;
                   });
-                  map._deckgl.setProps({ layers: visibleLayers });
+                  (map._deckgl || map._deckOverlay).setProps({ layers: visibleLayers });
                 }
               } else {
                 // Handle regular layer visibility

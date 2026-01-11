@@ -38,13 +38,17 @@
 #' @param flow_dim_basemap Whether to apply CSS filters to dim the basemap and make the flowmap stand out. In dark mode, applies grayscale, invert, and color adjustments with reduced opacity. In light mode, applies grayscale with reduced opacity. Matches the visual style of flowmap.gl examples. Default is FALSE.
 #' @param flow_blend_mode Blending mode. One of "normal", "screen", or "glow".
 #'   - "normal": No special blending (default).
-#'   - "screen": Applies CSS mix-blend-mode to the deck.gl canvas for a screen (dark mode) or darken (light mode) blending effect. This creates a subtle glow where flows overlap.
-#'   - "glow": Applies WebGL blend functions for a more pronounced glow/accumulation effect. Uses `SRC_ALPHA, ONE_MINUS_DST_COLOR` which works best in dark mode with MapLibre. May have rendering issues in Mapbox.
+#'   - "screen": Applies CSS `mix-blend-mode` to the deck.gl canvas for a screen (dark mode) or darken (light mode) blending effect. Creates a subtle glow where flows overlap. **Only works when `before_id = NULL`** because CSS blending requires a separate deck.gl canvas.
+#'   - "glow": Applies WebGL blend functions (`SRC_ALPHA, ONE_MINUS_DST_COLOR`) for a more pronounced glow/accumulation effect. Works best in dark mode. **Works with both `before_id = NULL` and when layer ordering is enabled.**
 #' @param visibility Whether this layer is displayed.
 #' @param slot An optional slot for layer order (not currently supported for flowmap layers).
 #' @param min_zoom The minimum zoom level for the layer (not currently supported for flowmap layers).
 #' @param max_zoom The maximum zoom level for the layer (not currently supported for flowmap layers).
-#' @param before_id The name of the layer that this layer appears "before" (not currently supported for flowmap layers).
+#' @param before_id The ID of a map layer to insert this flowmap "before" (i.e., below). When set, the flowmap will respect the map's layer ordering and appear at the specified position in the layer stack. This uses deck.gl's `MapboxOverlay` with `interleaved: true` mode.
+#'
+#'   **Trade-off**: When `before_id` is set, CSS blend modes (`flow_blend_mode = "screen"`) are disabled because interleaved rendering shares the map's WebGL context. The "glow" WebGL blend mode still works.
+#'
+#'   When `before_id = NULL` (default), the flowmap renders on a separate canvas on top of all map layers, which enables CSS blend modes but ignores layer ordering.
 #' @param popup A column name from locations or flows to display in a popup on click.
 #' @param tooltip A column name from locations or flows to display in a tooltip on hover.
 #' @param hover_options A named list of options for highlighting features in the layer on hover (not currently supported for flowmap layers).
@@ -128,9 +132,23 @@ add_flowmap <- function(
     flow_dim_basemap <- flow_blend_mode != "normal"
   }
 
+  # Determine if interleaved mode is needed (for layer ordering)
+  # When before_id is set, we use MapboxOverlay with interleaved: true
+  use_interleaved <- !is.null(before_id)
+
   # Map simplified mode to internal booleans
   css_blend_mode <- flow_blend_mode == "screen"
   webgl_blend_mode <- flow_blend_mode == "glow"
+
+  # Warn about trade-offs
+  if (use_interleaved && css_blend_mode) {
+    warning(
+      "flow_blend_mode = 'screen' (CSS blending) is disabled when before_id is set. ",
+      "CSS blend modes require a separate canvas, which conflicts with layer ordering. ",
+      "Consider using flow_blend_mode = 'glow' (WebGL blending) instead, which works with layer ordering."
+    )
+    css_blend_mode <- FALSE
+  }
 
   if (webgl_blend_mode && !flow_dark_mode) {
     warning(
@@ -387,6 +405,8 @@ add_flowmap <- function(
     dimBasemap = flow_dim_basemap,
     cssBlendMode = css_blend_mode,
     webglBlendMode = webgl_blend_mode,
+    interleaved = use_interleaved,
+    beforeId = before_id,
     visibility = visibility,
     minZoom = min_zoom,
     maxZoom = max_zoom,
