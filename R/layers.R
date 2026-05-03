@@ -93,6 +93,28 @@ add_layer <- function(
       data = geojson,
       generateId = TRUE
     )
+  } else if (.is_streamable(source)) {
+    # If streamdeck is loaded, inject the streaming layer immediately.
+    # This avoids using hooks and prevents circular reference crashes.
+    if (requireNamespace("streamdeck", quietly = TRUE)) {
+      # Pass properties to streamdeck's handler
+      # Note: we use 'mori' as the default engine
+      map <- streamdeck::add_duckdb_layer(
+        map = map,
+        conn = source,
+        layer_type = .mapgl_to_deckgl_type(type),
+        layer_id = id,
+        # Pass style properties (simplified)
+        get_fill_color = paint[["fill-color"]] %||% paint[["circle-color"]],
+        get_line_color = paint[["line-color"]] %||% paint[["fill-outline-color"]],
+        get_line_width = paint[["line-width"]],
+        get_radius = paint[["circle-radius"]],
+        opacity = paint[["fill-opacity"]] %||% paint[["line-opacity"]] %||% paint[["circle-opacity"]]
+      )
+      # We still need to record the layer in mapgl's list for legend support,
+      # but we use a lightweight placeholder source to avoid JSON bloat.
+      source <- list(type = "geojson", data = "streamdeck-intercepted")
+    }
   }
 
   map$x$layers <- c(

@@ -17,6 +17,9 @@ add_source <- function(map, id, data, ...) {
       data <- sf::st_transform(data, crs = 4326)
     }
     geojson <- geojsonsf::sf_geojson(data)
+  } else if (.is_streamable(data)) {
+    # Skip conversion for streamable objects; they will be handled by streamdeck
+    geojson <- data
   } else if (is.character(data) && grepl("^http", data)) {
     geojson <- data
   } else {

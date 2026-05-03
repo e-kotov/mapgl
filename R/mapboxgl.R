@@ -77,6 +77,8 @@ mapboxgl <- function(
         }
         if (inherits(bounds, "sf")) {
             bounds <- as.vector(sf::st_bbox(sf::st_transform(bounds, 4326)))
+        } else if (inherits(bounds, "duckspatial_df")) {
+            bounds <- as.vector(sf::st_bbox(sf::st_transform(sf::st_as_sf(bounds), 4326)))
         } else if (inherits(bounds, "bbox")) {
             # Curiously, anyNA(bounds) or any(is.na(bounds)) would return FALSE even
             # if one of the four values is NA.
@@ -103,7 +105,7 @@ mapboxgl <- function(
         stylesheet = "layers-control.css"
     )
 
-    htmlwidgets::createWidget(
+    w <- htmlwidgets::createWidget(
         name = "mapboxgl",
         x = list(
             style = style,
@@ -131,6 +133,8 @@ mapboxgl <- function(
             browser.defaultHeight = "100vh"
         )
     )
+    
+    return(w)
 }
 
 #' Create a Mapbox GL output element for Shiny

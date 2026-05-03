@@ -14,6 +14,9 @@ fit_bounds <- function(map, bbox, animate = FALSE, ...) {
 
   if (inherits(bbox, "sf")) {
     bbox <- as.vector(sf::st_bbox(sf::st_transform(bbox, 4326)))
+  } else if (inherits(bbox, "duckspatial_df")) {
+    # Extract bbox from duckspatial_df (using duckspatial/sf logic)
+    bbox <- as.vector(sf::st_bbox(sf::st_transform(sf::st_as_sf(bbox), 4326)))
   }
 
   if (inherits(map, "mapboxgl_proxy") || inherits(map, "maplibre_proxy")) {

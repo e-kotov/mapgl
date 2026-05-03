@@ -572,3 +572,33 @@ legend_style <- function(
   class(style_list) <- "mapgl_legend_style"
   return(style_list)
 }
+
+# Internal function to check if an object is streamable via streamdeck
+.is_streamable <- function(x) {
+  inherits(x, "duckspatial_df") || 
+  inherits(x, "nanoarrow_array_stream") || 
+  inherits(x, "streamdeck_source")
+}
+
+# Internal preRenderHook for streamdeck integration
+# Defined here to avoid capturing local variables in maplibre/mapboxgl closures
+.streamdeck_hook <- function(map) {
+  # Remove self to prevent infinite recursion during printing/rendering
+  map$preRenderHook <- NULL 
+  
+  if (requireNamespace("streamdeck", quietly = TRUE)) {
+    map <- streamdeck::streamdeck(map)
+  }
+  map
+}
+
+# Helper to convert type for immediate injection
+.mapgl_to_deckgl_type <- function(type) {
+  switch(type,
+    "fill" = "polygon",
+    "line" = "path",
+    "circle" = "scatterplot",
+    "fill-extrusion" = "polygon",
+    "polygon"
+  )
+}
