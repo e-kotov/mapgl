@@ -9,7 +9,7 @@ to customize appearance and clear_legend() to remove legends."><meta property="o
 
     <a class="navbar-brand me-2" href="../index.html">mapgl</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.4.3</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.4.9.9000</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -54,8 +54,8 @@ to customize appearance and <code><a href="clear_legend.html">clear_legend()</a>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">add_legend</span><span class="op">(</span></span>
 <span>  <span class="va">map</span>,</span>
 <span>  <span class="va">legend_title</span>,</span>
-<span>  <span class="va">values</span>,</span>
-<span>  <span class="va">colors</span>,</span>
+<span>  values <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  colors <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"continuous"</span>, <span class="st">"categorical"</span><span class="op">)</span>,</span>
 <span>  circular_patches <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  patch_shape <span class="op">=</span> <span class="st">"square"</span>,</span>
@@ -70,7 +70,22 @@ to customize appearance and <code><a href="clear_legend.html">clear_legend()</a>
 <span>  margin_bottom <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  margin_left <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  style <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  target <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  target <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  interactive <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  filter_column <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  filter_values <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  classification <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  breaks <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  color_ramps <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  selected_ramp <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  ramp_picker <span class="op">=</span> <span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">color_ramps</span><span class="op">)</span>,</span>
+<span>  ramp_labels <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  color_column <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  color_property <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  na_color <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  draggable <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  collapsible <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  collapsed <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">add_categorical_legend</span><span class="op">(</span></span>
@@ -90,7 +105,14 @@ to customize appearance and <code><a href="clear_legend.html">clear_legend()</a>
 <span>  margin_right <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  margin_bottom <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  margin_left <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  style <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  style <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  interactive <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  filter_column <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  filter_values <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  breaks <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  draggable <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  collapsible <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  collapsed <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">add_continuous_legend</span><span class="op">(</span></span>
@@ -107,7 +129,20 @@ to customize appearance and <code><a href="clear_legend.html">clear_legend()</a>
 <span>  margin_right <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  margin_bottom <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  margin_left <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  style <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  style <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  interactive <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  filter_column <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  filter_values <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  draggable <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  color_ramps <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  selected_ramp <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  ramp_picker <span class="op">=</span> <span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">color_ramps</span><span class="op">)</span>,</span>
+<span>  ramp_labels <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  color_column <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  color_property <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  na_color <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  collapsible <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  collapsed <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># S3 method for class 'mapboxgl_compare'</span></span>
@@ -130,7 +165,22 @@ to customize appearance and <code><a href="clear_legend.html">clear_legend()</a>
 <span>  margin_bottom <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  margin_left <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  style <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  target <span class="op">=</span> <span class="st">"compare"</span></span>
+<span>  target <span class="op">=</span> <span class="st">"compare"</span>,</span>
+<span>  interactive <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  filter_column <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  filter_values <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  classification <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  breaks <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  color_ramps <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  selected_ramp <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  ramp_picker <span class="op">=</span> <span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">color_ramps</span><span class="op">)</span>,</span>
+<span>  ramp_labels <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  color_column <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  color_property <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  na_color <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  draggable <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  collapsible <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  collapsed <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># S3 method for class 'maplibre_compare'</span></span>
@@ -153,7 +203,22 @@ to customize appearance and <code><a href="clear_legend.html">clear_legend()</a>
 <span>  margin_bottom <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  margin_left <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  style <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  target <span class="op">=</span> <span class="st">"compare"</span></span>
+<span>  target <span class="op">=</span> <span class="st">"compare"</span>,</span>
+<span>  interactive <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  filter_column <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  filter_values <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  classification <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  breaks <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  color_ramps <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  selected_ramp <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  ramp_picker <span class="op">=</span> <span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html" class="external-link">is.null</a></span><span class="op">(</span><span class="va">color_ramps</span><span class="op">)</span>,</span>
+<span>  ramp_labels <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  color_column <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  color_property <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  na_color <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  draggable <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  collapsible <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  collapsed <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -210,7 +275,7 @@ to customize appearance and <code><a href="clear_legend.html">clear_legend()</a>
 
 
 <dt id="arg-layer-id">layer_id<a class="anchor" aria-label="anchor" href="#arg-layer-id"></a></dt>
-<dd><p>The ID of the layer that this legend is associated with. If provided, the legend will be shown/hidden when the layer visibility is toggled.</p></dd>
+<dd><p>The ID of the layer (or a character vector of layer IDs) that this legend is associated with. If provided, the legend will be shown/hidden when the layer visibility is toggled. When multiple layer IDs are provided with <code>interactive = TRUE</code>, the legend will filter all specified layers simultaneously.</p></dd>
 
 
 <dt id="arg-margin-top">margin_top<a class="anchor" aria-label="anchor" href="#arg-margin-top"></a></dt>
@@ -236,10 +301,85 @@ to customize appearance and <code><a href="clear_legend.html">clear_legend()</a>
 <dt id="arg-target">target<a class="anchor" aria-label="anchor" href="#arg-target"></a></dt>
 <dd><p>For compare objects only: where to place the legend. Can be "compare" (attached to compare container, persists during swipe), "before" (attached to left/top map), or "after" (attached to right/bottom map). Default is "compare".</p></dd>
 
+
+<dt id="arg-interactive">interactive<a class="anchor" aria-label="anchor" href="#arg-interactive"></a></dt>
+<dd><p>Logical, whether to make the legend interactive. For categorical legends, clicking on legend items will toggle the visibility of the corresponding features. For continuous legends, a range slider will appear allowing users to filter features by value. Default is FALSE. Note: interactive legends are not yet supported for compare maps.</p></dd>
+
+
+<dt id="arg-filter-column">filter_column<a class="anchor" aria-label="anchor" href="#arg-filter-column"></a></dt>
+<dd><p>Character, the name of the data column to use for filtering when interactive is TRUE. If NULL (default), the column will be auto-detected from the layer's paint expression.</p></dd>
+
+
+<dt id="arg-filter-values">filter_values<a class="anchor" aria-label="anchor" href="#arg-filter-values"></a></dt>
+<dd><p>For interactive legends, the actual data values to filter on. For categorical legends, use this when your display labels differ from the data values (e.g., values = c("Music", "Bar") for display, filter_values = c("music", "bar") for filtering). For continuous legends, provide numeric break values when using formatted display labels (e.g., values = get_legend_labels(scale), filter_values = get_breaks(scale)). If NULL (default), uses values.</p></dd>
+
+
+<dt id="arg-classification">classification<a class="anchor" aria-label="anchor" href="#arg-classification"></a></dt>
+<dd><p>A mapgl_classification object (from step_quantile, step_equal_interval, etc.) to use for the legend. When provided, values and colors will be automatically extracted. For interactive legends, range-based filtering will be used based on the classification breaks.</p></dd>
+
+
+<dt id="arg-breaks">breaks<a class="anchor" aria-label="anchor" href="#arg-breaks"></a></dt>
+<dd><p>Numeric vector of break points for filtering with classification-based legends. Typically extracted automatically from the classification object. Only needed if you want to override the default breaks.</p></dd>
+
+
+<dt id="arg-color-ramps">color_ramps<a class="anchor" aria-label="anchor" href="#arg-color-ramps"></a></dt>
+<dd><p>For continuous legends, a list of color vectors to expose in a color-ramp picker. Named lists use the names as picker labels; unnamed lists get generated labels.</p></dd>
+
+
+<dt id="arg-selected-ramp">selected_ramp<a class="anchor" aria-label="anchor" href="#arg-selected-ramp"></a></dt>
+<dd><p>The initially selected ramp name or index when <code>color_ramps</code> is provided.</p></dd>
+
+
+<dt id="arg-ramp-picker">ramp_picker<a class="anchor" aria-label="anchor" href="#arg-ramp-picker"></a></dt>
+<dd><p>Logical, whether to show the continuous legend color-ramp picker.</p></dd>
+
+
+<dt id="arg-ramp-labels">ramp_labels<a class="anchor" aria-label="anchor" href="#arg-ramp-labels"></a></dt>
+<dd><p>Logical, whether to show palette labels in the color-ramp picker.</p></dd>
+
+
+<dt id="arg-color-column">color_column<a class="anchor" aria-label="anchor" href="#arg-color-column"></a></dt>
+<dd><p>Character, the data column to use when restyling the layer. If NULL, mapgl attempts to auto-detect it from the layer paint expression.</p></dd>
+
+
+<dt id="arg-color-property">color_property<a class="anchor" aria-label="anchor" href="#arg-color-property"></a></dt>
+<dd><p>Character, the paint property to restyle. If NULL, mapgl attempts to auto-detect one of <code>fill-color</code>, <code>circle-color</code>, <code>line-color</code>, or <code>fill-extrusion-color</code>.</p></dd>
+
+
+<dt id="arg-na-color">na_color<a class="anchor" aria-label="anchor" href="#arg-na-color"></a></dt>
+<dd><p>Color to use for missing values when rebuilding the interpolation expression.</p></dd>
+
+
+<dt id="arg-draggable">draggable<a class="anchor" aria-label="anchor" href="#arg-draggable"></a></dt>
+<dd><p>Logical, whether the legend can be dragged to a new position by the user. Default is FALSE.</p></dd>
+
+
+<dt id="arg-collapsible">collapsible<a class="anchor" aria-label="anchor" href="#arg-collapsible"></a></dt>
+<dd><p>Logical, whether to render a toggle button that collapses the legend to a header-only view. Default is FALSE. Most useful for categorical legends with tall bodies on small viewports.</p></dd>
+
+
+<dt id="arg-collapsed">collapsed<a class="anchor" aria-label="anchor" href="#arg-collapsed"></a></dt>
+<dd><p>Logical, whether the legend starts in the collapsed state. Only applies when <code>collapsible = TRUE</code>. Default is FALSE.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p>The updated map object with the legend added.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p><strong>Collapsible legends.</strong> When <code>collapsible = TRUE</code>, a 26x26px toggle
+button is rendered in the legend's top-right corner. Collapsed, only the
+title heading and the toggle button remain visible; every other direct
+child of the legend (subtitles, swatches, item labels, the reset-filter
+button from interactive legends, any user-appended source footers) is
+hidden via CSS. The toggle button inherits <code>border_color</code> and
+<code>text_color</code> from <code><a href="legend_style.html">legend_style()</a></code> so it picks up your
+legend theme.</p>
+<p>If you inject your own title block via <code><a href="https://rdrr.io/pkg/htmlwidgets/man/onRender.html" class="external-link">htmlwidgets::onRender()</a></code> –
+for example, to add a styled heading above the default title – mark that
+element with <code>class="mapgl-legend-title"</code> so it stays visible when
+collapsed.</p>
     </div>
 
     <div class="section level2">
@@ -404,7 +544,7 @@ to customize appearance and <code><a href="clear_legend.html">clear_legend()</a>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.9000.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.9000.</p>
 </div>
 
     </footer></div>

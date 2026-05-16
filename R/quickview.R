@@ -7,6 +7,49 @@ categorical_colors <- function(n) {
   rep_len(set1, n)
 }
 
+# Internal helper to format values with K/M notation for large numbers
+format_legend_value <- function(x) {
+
+  sapply(x, function(val) {
+    if (is.na(val)) return(NA_character_)
+    abs_val <- abs(val)
+    if (abs_val >= 1e6) {
+      paste0(round(val / 1e6, 1), "M")
+    } else if (abs_val >= 1e3) {
+      paste0(round(val / 1e3, 1), "K")
+    } else if (abs_val >= 1) {
+      as.character(round(val, 1))
+    } else {
+      as.character(round(val, 2))
+    }
+  })
+}
+
+# Internal helper to create a classification object for quickview quantile legends
+create_quickview_classification <- function(breaks, colors) {
+  n_breaks <- length(breaks) - 1
+  formatted <- format_legend_value(breaks)
+  labels <- c(
+    paste0("< ", formatted[2]),
+    if (n_breaks > 1) {
+      sapply(2:n_breaks, function(i) {
+        paste0(formatted[i], " - ", formatted[i + 1])
+      })
+    } else {
+      NULL
+    }
+  )
+  result <- list(
+    labels = labels,
+    colors = colors,
+    breaks = as.numeric(breaks),
+    method = "quantile",
+    n_classes = n_breaks
+  )
+  class(result) <- "mapgl_classification"
+  result
+}
+
 #' Quick visualization of geometries with Mapbox GL
 #'
 #' This function provides a quick way to visualize sf geometries and raster data using Mapbox GL JS.
@@ -21,6 +64,9 @@ categorical_colors <- function(n) {
 #' @param layer_id The layer ID to use for the visualization. Defaults to "quickview".
 #' @param legend Logical, whether to add a legend when a column is specified. Defaults to TRUE.
 #' @param legend_position The position of the legend on the map. Defaults to "top-left".
+#' @param interactive_legend Logical, whether to make the legend interactive.
+#'   When TRUE, categorical legends allow clicking to toggle visibility,
+#'   and continuous legends show a range slider. Defaults to FALSE.
 #' @param ... Additional arguments passed to mapboxgl()
 #'
 #' @return A Mapbox GL map object
@@ -55,8 +101,13 @@ mapboxgl_view <- function(
   layer_id = "quickview",
   legend = TRUE,
   legend_position = "top-left",
+  interactive_legend = FALSE,
   ...
 ) {
+  if (inherits(data, "sfc")) {
+    data <- sf::st_as_sf(data)
+    data$id <- seq_len(nrow(data))
+  }
   if (!inherits(data, c("sf", "SpatRaster", "RasterLayer"))) {
     stop("data must be an sf object, SpatRaster, or RasterLayer")
   }
@@ -147,11 +198,12 @@ mapboxgl_view <- function(
       map <- map |>
         add_legend(
           legend_title = if (!is.null(column)) column else "Values",
-          values = c(round(min_val, 2), round(max_val, 2)),
+          values = breaks,
           colors = legend_colors,
           type = "continuous",
           position = legend_position,
-          layer_id = layer_id
+          layer_id = layer_id,
+          interactive = interactive_legend
         )
     }
 
@@ -233,26 +285,16 @@ mapboxgl_view <- function(
             )
 
           if (legend) {
+            classification <- create_quickview_classification(breaks, colors)
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(
-                  paste0("< ", round(breaks[2], 2)),
-                  if (n_breaks > 1) {
-                    sapply(2:n_breaks, function(i) {
-                      paste0(
-                        round(breaks[i], 2),
-                        " - ",
-                        round(breaks[i + 1], 2)
-                      )
-                    })
-                  } else NULL
-                ),
-                colors = colors,
                 type = "categorical",
                 patch_shape = "circle",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend,
+                classification = classification
               )
           }
         } else {
@@ -280,11 +322,12 @@ mapboxgl_view <- function(
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(round(min_val, 2), round(max_val, 2)),
+                values = breaks,
                 colors = colors,
                 type = "continuous",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend
               )
           }
         }
@@ -322,7 +365,8 @@ mapboxgl_view <- function(
               type = "categorical",
               patch_shape = "circle",
               position = legend_position,
-              layer_id = layer_id
+              layer_id = layer_id,
+              interactive = interactive_legend
             )
         }
       }
@@ -385,26 +429,16 @@ mapboxgl_view <- function(
             )
 
           if (legend) {
+            classification <- create_quickview_classification(breaks, colors)
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(
-                  paste0("< ", round(breaks[2], 2)),
-                  if (n_breaks > 1) {
-                    sapply(2:n_breaks, function(i) {
-                      paste0(
-                        round(breaks[i], 2),
-                        " - ",
-                        round(breaks[i + 1], 2)
-                      )
-                    })
-                  } else NULL
-                ),
-                colors = colors,
                 type = "categorical",
                 patch_shape = "line",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend,
+                classification = classification
               )
           }
         } else {
@@ -432,11 +466,12 @@ mapboxgl_view <- function(
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(round(min_val, 2), round(max_val, 2)),
+                values = breaks,
                 colors = colors,
                 type = "continuous",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend
               )
           }
         }
@@ -474,7 +509,8 @@ mapboxgl_view <- function(
               type = "categorical",
               patch_shape = "line",
               position = legend_position,
-              layer_id = layer_id
+              layer_id = layer_id,
+              interactive = interactive_legend
             )
         }
       }
@@ -537,25 +573,15 @@ mapboxgl_view <- function(
             )
 
           if (legend) {
+            classification <- create_quickview_classification(breaks, colors)
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(
-                  paste0("< ", round(breaks[2], 2)),
-                  if (n_breaks > 1) {
-                    sapply(2:n_breaks, function(i) {
-                      paste0(
-                        round(breaks[i], 2),
-                        " - ",
-                        round(breaks[i + 1], 2)
-                      )
-                    })
-                  } else NULL
-                ),
-                colors = colors,
                 type = "categorical",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend,
+                classification = classification
               )
           }
         } else {
@@ -583,11 +609,12 @@ mapboxgl_view <- function(
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(round(min_val, 2), round(max_val, 2)),
+                values = breaks,
                 colors = colors,
                 type = "continuous",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend
               )
           }
         }
@@ -624,7 +651,8 @@ mapboxgl_view <- function(
               colors = colors,
               type = "categorical",
               position = legend_position,
-              layer_id = layer_id
+              layer_id = layer_id,
+              interactive = interactive_legend
             )
         }
       }
@@ -648,6 +676,9 @@ mapboxgl_view <- function(
 #' @param layer_id The layer ID to use for the visualization. Defaults to "quickview".
 #' @param legend Logical, whether to add a legend when a column is specified. Defaults to TRUE.
 #' @param legend_position The position of the legend on the map. Defaults to "top-left".
+#' @param interactive_legend Logical, whether to make the legend interactive.
+#'   When TRUE, categorical legends allow clicking to toggle visibility,
+#'   and continuous legends show a range slider. Defaults to FALSE.
 #' @param ... Additional arguments passed to maplibre()
 #'
 #' @return A MapLibre GL map object
@@ -682,8 +713,13 @@ maplibre_view <- function(
   layer_id = "quickview",
   legend = TRUE,
   legend_position = "top-left",
+  interactive_legend = FALSE,
   ...
 ) {
+  if (inherits(data, "sfc")) {
+    data <- sf::st_as_sf(data)
+    data$id <- seq_len(nrow(data))
+  }
   if (!inherits(data, c("sf", "SpatRaster", "RasterLayer"))) {
     stop("data must be an sf object, SpatRaster, or RasterLayer")
   }
@@ -776,10 +812,12 @@ maplibre_view <- function(
       map <- map |>
         add_legend(
           legend_title = if (!is.null(column)) column else "Values",
-          values = c(round(min_val, 2), round(max_val, 2)),
+          values = breaks,
           colors = legend_colors,
           type = "continuous",
-          layer_id = layer_id
+          position = legend_position,
+          layer_id = layer_id,
+          interactive = interactive_legend
         )
     }
 
@@ -861,26 +899,16 @@ maplibre_view <- function(
             )
 
           if (legend) {
+            classification <- create_quickview_classification(breaks, colors)
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(
-                  paste0("< ", round(breaks[2], 2)),
-                  if (n_breaks > 1) {
-                    sapply(2:n_breaks, function(i) {
-                      paste0(
-                        round(breaks[i], 2),
-                        " - ",
-                        round(breaks[i + 1], 2)
-                      )
-                    })
-                  } else NULL
-                ),
-                colors = colors,
                 type = "categorical",
                 patch_shape = "circle",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend,
+                classification = classification
               )
           }
         } else {
@@ -908,11 +936,12 @@ maplibre_view <- function(
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(round(min_val, 2), round(max_val, 2)),
+                values = breaks,
                 colors = colors,
                 type = "continuous",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend
               )
           }
         }
@@ -950,7 +979,8 @@ maplibre_view <- function(
               type = "categorical",
               patch_shape = "circle",
               position = legend_position,
-              layer_id = layer_id
+              layer_id = layer_id,
+              interactive = interactive_legend
             )
         }
       }
@@ -1013,26 +1043,16 @@ maplibre_view <- function(
             )
 
           if (legend) {
+            classification <- create_quickview_classification(breaks, colors)
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(
-                  paste0("< ", round(breaks[2], 2)),
-                  if (n_breaks > 1) {
-                    sapply(2:n_breaks, function(i) {
-                      paste0(
-                        round(breaks[i], 2),
-                        " - ",
-                        round(breaks[i + 1], 2)
-                      )
-                    })
-                  } else NULL
-                ),
-                colors = colors,
                 type = "categorical",
                 patch_shape = "line",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend,
+                classification = classification
               )
           }
         } else {
@@ -1060,11 +1080,12 @@ maplibre_view <- function(
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(round(min_val, 2), round(max_val, 2)),
+                values = breaks,
                 colors = colors,
                 type = "continuous",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend
               )
           }
         }
@@ -1102,7 +1123,8 @@ maplibre_view <- function(
               type = "categorical",
               patch_shape = "line",
               position = legend_position,
-              layer_id = layer_id
+              layer_id = layer_id,
+              interactive = interactive_legend
             )
         }
       }
@@ -1165,25 +1187,15 @@ maplibre_view <- function(
             )
 
           if (legend) {
+            classification <- create_quickview_classification(breaks, colors)
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(
-                  paste0("< ", round(breaks[2], 2)),
-                  if (n_breaks > 1) {
-                    sapply(2:n_breaks, function(i) {
-                      paste0(
-                        round(breaks[i], 2),
-                        " - ",
-                        round(breaks[i + 1], 2)
-                      )
-                    })
-                  } else NULL
-                ),
-                colors = colors,
                 type = "categorical",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend,
+                classification = classification
               )
           }
         } else {
@@ -1211,11 +1223,12 @@ maplibre_view <- function(
             map <- map |>
               add_legend(
                 legend_title = column,
-                values = c(round(min_val, 2), round(max_val, 2)),
+                values = breaks,
                 colors = colors,
                 type = "continuous",
                 position = legend_position,
-                layer_id = layer_id
+                layer_id = layer_id,
+                interactive = interactive_legend
               )
           }
         }
@@ -1252,7 +1265,8 @@ maplibre_view <- function(
               colors = colors,
               type = "categorical",
               position = legend_position,
-              layer_id = layer_id
+              layer_id = layer_id,
+              interactive = interactive_legend
             )
         }
       }
@@ -1320,6 +1334,10 @@ add_view <- function(
     stop("map must be a mapboxgl or maplibregl map object")
   }
 
+  if (inherits(data, "sfc")) {
+    data <- sf::st_as_sf(data)
+    data$id <- seq_len(nrow(data))
+  }
   if (!inherits(data, c("sf", "SpatRaster", "RasterLayer"))) {
     stop("data must be an sf object, SpatRaster, or RasterLayer")
   }

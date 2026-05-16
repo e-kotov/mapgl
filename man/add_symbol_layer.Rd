@@ -24,6 +24,7 @@ add_symbol_layer(
   icon_image = NULL,
   icon_image_cross_fade = NULL,
   icon_keep_upright = NULL,
+  icon_occlusion_opacity = NULL,
   icon_offset = NULL,
   icon_opacity = NULL,
   icon_optional = NULL,
@@ -59,6 +60,7 @@ add_symbol_layer(
   text_line_height = NULL,
   text_max_angle = NULL,
   text_max_width = NULL,
+  text_occlusion_opacity = NULL,
   text_offset = NULL,
   text_opacity = NULL,
   text_optional = NULL,
@@ -125,6 +127,8 @@ Images can also be loaded with the \code{add_image()} function which should prec
 \item{icon_image_cross_fade}{The cross-fade parameter for the icon image.}
 
 \item{icon_keep_upright}{If TRUE, the icon will be kept upright.}
+
+\item{icon_occlusion_opacity}{The opacity at which the icon will be drawn when occluded by 3D objects. Value between 0 and 1; 0 hides occluded icons.}
 
 \item{icon_offset}{Offset distance of icon.}
 
@@ -200,6 +204,8 @@ Requires \code{symbol_placement} to be set to \code{"point"} and \code{symbol-z-
 
 \item{text_max_width}{Maximum width of the text.}
 
+\item{text_occlusion_opacity}{The opacity at which the text will be drawn when occluded by 3D objects. Value between 0 and 1; 0 hides occluded text.}
+
 \item{text_offset}{Offset distance of text.}
 
 \item{text_opacity}{The opacity at which the text will be drawn.}
@@ -246,7 +252,9 @@ Requires \code{symbol_placement} to be set to \code{"point"} and \code{symbol-z-
 
 \item{filter}{An optional filter expression to subset features in the layer.}
 
-\item{cluster_options}{A list of options for clustering symbols, created by the \code{cluster_options()} function.}
+\item{cluster_options}{A list of options for clustering symbols, created by the \code{cluster_options()} function. Two input shapes are supported: pass an \code{sf}/\code{sfc} object as \code{source} for native live clustering (a GeoJSON source is injected automatically), or pass the id of an already-registered vector source (e.g. from \code{add_pmtiles_source()}) along with \code{source_layer} to use pre-clustered vector tiles such as those produced by the freestiler package. In the latter case the cluster-count label is abbreviated client-side via \code{\link[=number_format]{number_format()}}.
+
+\strong{Updating a clustered layer in Shiny:} the shortcut creates three layers (\code{"id"}, \code{"id-clusters"}, \code{"id-cluster-count"}) on top of one source. For reactive data updates the recommended pattern is \code{\link[=set_source]{set_source()}}, which replaces the source's data and lets Mapbox/MapLibre re-cluster automatically without tearing down the layers: \code{mapboxgl_proxy("map") |> set_source(layer_id = "pts", source = filtered())}. If you need to remove a clustered layer entirely (e.g. before switching backends), pass the full trio to \code{\link[=clear_layer]{clear_layer()}}: \code{clear_layer(proxy, c("pts", "pts-clusters", "pts-cluster-count"))}.}
 }
 \value{
 The modified map object with the new symbol layer added.

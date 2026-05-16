@@ -60,6 +60,221 @@ function evaluateExpression(expression, properties) {
   }
 }
 
+function formatDmsCoordinate(value, axis, precision) {
+  const direction =
+    axis === "lng" ? (value < 0 ? "W" : "E") : value < 0 ? "S" : "N";
+  const absolute = Math.abs(value);
+  let degrees = Math.floor(absolute);
+  const minutesFloat = (absolute - degrees) * 60;
+  let minutes = Math.floor(minutesFloat);
+  let seconds = (minutesFloat - minutes) * 60;
+
+  const factor = Math.pow(10, precision);
+  seconds = Math.round(seconds * factor) / factor;
+  if (seconds >= 60) {
+    seconds = 0;
+    minutes += 1;
+  }
+  if (minutes >= 60) {
+    minutes = 0;
+    degrees += 1;
+  }
+
+  const secondsText = seconds
+    .toFixed(precision)
+    .padStart(precision > 0 ? precision + 3 : 2, "0");
+  return `${degrees}\u00b0${String(minutes).padStart(2, "0")}'${secondsText}"${direction}`;
+}
+
+function formatCoordinates(lngLat, format, precision) {
+  if (format === "dms") {
+    return `${formatDmsCoordinate(lngLat.lng, "lng", precision)}, ${formatDmsCoordinate(lngLat.lat, "lat", precision)}`;
+  }
+  return `${lngLat.lng.toFixed(precision)}, ${lngLat.lat.toFixed(precision)}`;
+}
+
+function createCoordinatesControl(options) {
+  const controlOptions = options || {};
+  const format = controlOptions.format || "decimal";
+  const precisionValue = Number(controlOptions.precision);
+  const precision = Number.isFinite(precisionValue)
+    ? Math.min(20, Math.max(0, Math.floor(precisionValue)))
+    : format === "dms" ? 1 : 5;
+  const emptyText = controlOptions.empty_text || "Move cursor over map";
+  const labelText = controlOptions.label || "";
+  const wrapLongitude = controlOptions.wrap !== false;
+
+  const container = document.createElement("div");
+  container.className = "mapgl-coordinates-control maplibregl-ctrl";
+  container.style.cssText = `
+    background: #ffffff;
+    padding: 8px 10px;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+    color: #222;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.35;
+    min-width: 142px;
+    max-width: 240px;
+    border: 1px solid rgba(0,0,0,0.1);
+    pointer-events: none;
+  `;
+
+  if (labelText) {
+    const label = document.createElement("div");
+    label.className = "mapgl-coordinates-label";
+    label.textContent = labelText;
+    label.style.cssText = `
+      margin-bottom: 2px;
+      color: #666;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    `;
+    container.appendChild(label);
+  }
+
+  const value = document.createElement("div");
+  value.className = "mapgl-coordinates-value";
+  value.textContent = emptyText;
+  value.style.cssText = `
+    color: #111;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  `;
+  container.appendChild(value);
+
+  let mapRef = null;
+  const update = (event) => {
+    if (!event || !event.lngLat) return;
+    const lngLat =
+      wrapLongitude && typeof event.lngLat.wrap === "function"
+        ? event.lngLat.wrap()
+        : event.lngLat;
+    value.textContent = formatCoordinates(lngLat, format, precision);
+  };
+  const clear = () => {
+    value.textContent = emptyText;
+  };
+
+  return {
+    onAdd: function (map) {
+      mapRef = map;
+      mapRef.on("mousemove", update);
+      mapRef.getCanvas().addEventListener("mouseleave", clear);
+      return container;
+    },
+    onRemove: function () {
+      if (mapRef) {
+        mapRef.off("mousemove", update);
+        mapRef.getCanvas().removeEventListener("mouseleave", clear);
+      }
+      if (container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
+      mapRef = null;
+    },
+  };
+}
+
+function createMapglLaserPointer(options) {
+  const pointerOptions = options || {};
+  const color = pointerOptions.color || "#ff2d55";
+  const sizeValue = Number(pointerOptions.size);
+  const size = Number.isFinite(sizeValue) && sizeValue > 0 ? sizeValue : 14;
+
+  const pointer = document.createElement("div");
+  pointer.className = "mapgl-sync-laser-pointer";
+  pointer.style.cssText = `
+    position: absolute;
+    display: none;
+    width: ${size}px;
+    height: ${size}px;
+    margin: 0;
+    padding: 0;
+    border: 2px solid ${color};
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.9), 0 0 14px ${color};
+    box-sizing: border-box;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+  `;
+
+  const dot = document.createElement("div");
+  dot.style.cssText = `
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: ${color};
+    transform: translate(-50%, -50%);
+  `;
+  pointer.appendChild(dot);
+  return pointer;
+}
+
+function setupSyncLaserPointer(beforeMap, afterMap, options) {
+  const beforePointer = createMapglLaserPointer(options);
+  const afterPointer = createMapglLaserPointer(options);
+  const beforeContainer = beforeMap.getContainer();
+  const afterContainer = afterMap.getContainer();
+
+  beforeContainer.appendChild(beforePointer);
+  afterContainer.appendChild(afterPointer);
+
+  const hide = (pointer) => {
+    pointer.style.display = "none";
+  };
+
+  const update = (targetMap, pointer, event) => {
+    if (!event || !event.lngLat || !targetMap || !pointer) return;
+
+    const point = targetMap.project(event.lngLat);
+    const container = targetMap.getContainer();
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+
+    if (
+      point.x < 0 ||
+      point.y < 0 ||
+      point.x > width ||
+      point.y > height
+    ) {
+      hide(pointer);
+      return;
+    }
+
+    pointer.style.display = "block";
+    pointer.style.left = `${point.x}px`;
+    pointer.style.top = `${point.y}px`;
+  };
+
+  const beforeMove = (event) => update(afterMap, afterPointer, event);
+  const afterMove = (event) => update(beforeMap, beforePointer, event);
+  const beforeLeave = () => hide(afterPointer);
+  const afterLeave = () => hide(beforePointer);
+
+  beforeMap.on("mousemove", beforeMove);
+  afterMap.on("mousemove", afterMove);
+  beforeMap.getCanvas().addEventListener("mouseleave", beforeLeave);
+  afterMap.getCanvas().addEventListener("mouseleave", afterLeave);
+
+  return function cleanupSyncLaserPointer() {
+    beforeMap.off("mousemove", beforeMove);
+    afterMap.off("mousemove", afterMove);
+    beforeMap.getCanvas().removeEventListener("mouseleave", beforeLeave);
+    afterMap.getCanvas().removeEventListener("mouseleave", afterLeave);
+    beforePointer.remove();
+    afterPointer.remove();
+  };
+}
+
 function onMouseMoveTooltip(e, map, tooltipPopup, tooltipProperty, layerId) {
   if (e.features.length > 0) {
     // Query all features at this point to determine z-order
@@ -369,6 +584,10 @@ HTMLWidgets.widget({
 
           // Initialize the sync
           syncMaps();
+
+          if (x.laser && x.laser.enabled) {
+            setupSyncLaserPointer(beforeMap, afterMap, x.laser);
+          }
         }
 
         // Ensure both maps resize correctly
@@ -412,9 +631,29 @@ HTMLWidgets.widget({
               } else if (legendInfo.target === "before") {
                 // Append to the before map container
                 beforeMap.getContainer().appendChild(legend);
+                if (
+                  legendInfo.interactivity &&
+                  typeof initializeLegendInteractivity === "function"
+                ) {
+                  initializeLegendInteractivity(
+                    beforeMap,
+                    beforeMap.getContainer().id,
+                    legendInfo.interactivity,
+                  );
+                }
               } else if (legendInfo.target === "after") {
                 // Append to the after map container
                 afterMap.getContainer().appendChild(legend);
+                if (
+                  legendInfo.interactivity &&
+                  typeof initializeLegendInteractivity === "function"
+                ) {
+                  initializeLegendInteractivity(
+                    afterMap,
+                    afterMap.getContainer().id,
+                    legendInfo.interactivity,
+                  );
+                }
               }
             });
           }
@@ -435,7 +674,7 @@ HTMLWidgets.widget({
         if (HTMLWidgets.shinyMode) {
           Shiny.addCustomMessageHandler(
             "maplibre-compare-proxy",
-            function (data) {
+            async function (data) {
               if (data.id !== el.id) return;
 
               // Get the message and determine which map to target
@@ -474,6 +713,23 @@ HTMLWidgets.widget({
                   // Add url or tiles
                   if (message.source.url) {
                     sourceConfig.url = message.source.url;
+                    // Auto-detect MLT encoding for PMTiles sources
+                    if (
+                      message.source.url.startsWith("pmtiles://") &&
+                      typeof pmtiles !== "undefined" &&
+                      !message.source.encoding
+                    ) {
+                      try {
+                        const rawUrl = message.source.url.replace("pmtiles://", "");
+                        const p = new pmtiles.PMTiles(rawUrl);
+                        const header = await p.getHeader();
+                        if (header.tileType === pmtiles.TileType.Mlt) {
+                          sourceConfig.encoding = "mlt";
+                        }
+                      } catch (e) {
+                        console.warn("Failed to detect PMTiles tile type:", e);
+                      }
+                    }
                   }
                   if (message.source.tiles) {
                     sourceConfig.tiles = message.source.tiles;
@@ -964,6 +1220,16 @@ HTMLWidgets.widget({
                 // Append legend to the correct map container
                 const targetContainer = map.getContainer();
                 targetContainer.appendChild(legend);
+                if (
+                  message.interactivity &&
+                  typeof initializeLegendInteractivity === "function"
+                ) {
+                  initializeLegendInteractivity(
+                    map,
+                    targetContainer.id,
+                    message.interactivity,
+                  );
+                }
               } else if (message.type === "set_config_property") {
                 map.setConfigProperty(
                   message.importId,
@@ -1723,25 +1989,8 @@ HTMLWidgets.widget({
                   "maplibregl-ctrl-icon maplibregl-ctrl-reset";
                 resetControl.type = "button";
                 resetControl.setAttribute("aria-label", "Reset");
-                resetControl.innerHTML = "⟲";
-                resetControl.style.fontSize = "30px";
-                resetControl.style.fontWeight = "bold";
-                resetControl.style.backgroundColor = "white";
-                resetControl.style.border = "none";
-                resetControl.style.cursor = "pointer";
-                resetControl.style.padding = "0";
-                resetControl.style.width = "30px";
-                resetControl.style.height = "30px";
-                resetControl.style.display = "flex";
-                resetControl.style.justifyContent = "center";
-                resetControl.style.alignItems = "center";
-                resetControl.style.transition = "background-color 0.2s";
-                resetControl.addEventListener("mouseover", function () {
-                  this.style.backgroundColor = "#f0f0f0";
-                });
-                resetControl.addEventListener("mouseout", function () {
-                  this.style.backgroundColor = "white";
-                });
+                resetControl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>';
+                resetControl.style.cssText = "display:flex;justify-content:center;align-items:center;cursor:pointer;";
 
                 const resetContainer = document.createElement("div");
                 resetContainer.className =
@@ -1777,6 +2026,17 @@ HTMLWidgets.widget({
 
                 // Add to controls array
                 map.controls.push({ type: "reset", control: resetControlObj });
+              } else if (message.type === "add_coordinates_control") {
+                const coordinatesControlObj = createCoordinatesControl(message.options);
+                map.addControl(
+                  coordinatesControlObj,
+                  message.options.position || "bottom-right",
+                );
+
+                if (!map.controls) {
+                  map.controls = [];
+                }
+                map.controls.push({ type: "coordinates", control: coordinatesControlObj });
               } else if (message.type === "add_draw_control") {
                 let drawOptions = message.options || {};
                 if (message.freehand) {
@@ -2141,51 +2401,91 @@ HTMLWidgets.widget({
                 layersList.className = "layers-list";
                 layersControl.appendChild(layersList);
 
-                // Fetch layers to be included in the control
-                let layers =
-                  message.layers ||
-                  map.getStyle().layers.map((layer) => layer.id);
+                const allMaps = [beforeMap, afterMap];
+                let layersConfig = message.layers_config;
 
-                layers.forEach((layerId, index) => {
-                  const link = document.createElement("a");
-                  link.id = layerId;
-                  link.href = "#";
-                  link.textContent = layerId;
-                  link.className = "active";
+                if (layersConfig && Array.isArray(layersConfig)) {
+                  // grouped layers format (from named list in R)
+                  layersConfig.forEach((config, index) => {
+                    const link = document.createElement("a");
+                    const layerIds = Array.isArray(config.ids)
+                      ? config.ids
+                      : [config.ids];
+                    link.id = layerIds.join("-");
+                    link.href = "#";
+                    link.textContent = config.label;
+                    link.setAttribute("data-layer-ids", JSON.stringify(layerIds));
 
-                  // Show or hide layer when the toggle is clicked
-                  link.onclick = function (e) {
-                    const clickedLayer = this.textContent;
-                    e.preventDefault();
-                    e.stopPropagation();
-
-                    const visibility = map.getLayoutProperty(
-                      clickedLayer,
-                      "visibility",
-                    );
-
-                    // Toggle layer visibility by changing the layout object's visibility property
-                    if (visibility === "visible") {
-                      map.setLayoutProperty(clickedLayer, "visibility", "none");
-                      this.className = "";
-                    } else {
-                      this.className = "active";
-                      map.setLayoutProperty(
-                        clickedLayer,
-                        "visibility",
-                        "visible",
-                      );
+                    // check initial visibility from whichever map has the layer
+                    let initVis = "visible";
+                    for (const m of allMaps) {
+                      try {
+                        initVis = m.getLayoutProperty(layerIds[0], "visibility");
+                        break;
+                      } catch(err) {}
                     }
-                  };
+                    link.className = initVis === "none" ? "" : "active";
 
-                  layersList.appendChild(link);
-                });
+                    link.onclick = function (e) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const ids = JSON.parse(this.getAttribute("data-layer-ids"));
+                      let vis = "visible";
+                      for (const m of allMaps) {
+                        try { vis = m.getLayoutProperty(ids[0], "visibility"); break; } catch(err) {}
+                      }
+                      const newVis = vis === "visible" ? "none" : "visible";
+                      ids.forEach((layerId) => {
+                        allMaps.forEach((m) => {
+                          try { m.setLayoutProperty(layerId, "visibility", newVis); } catch(err) {}
+                        });
+                      });
+                      this.className = newVis === "visible" ? "active" : "";
+                    };
+
+                    layersList.appendChild(link);
+                  });
+                } else {
+                  // flat array fallback
+                  let layers =
+                    message.layers ||
+                    map.getStyle().layers.map((layer) => layer.id);
+
+                  layers.forEach((layerId, index) => {
+                    const link = document.createElement("a");
+                    link.id = layerId;
+                    link.href = "#";
+                    link.textContent = layerId;
+                    link.className = "active";
+
+                    link.onclick = function (e) {
+                      const clickedLayer = this.textContent;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const visibility = map.getLayoutProperty(clickedLayer, "visibility");
+                      const newVis = visibility === "visible" ? "none" : "visible";
+                      allMaps.forEach((m) => {
+                        try { m.setLayoutProperty(clickedLayer, "visibility", newVis); } catch(err) {}
+                      });
+                      this.className = newVis === "visible" ? "active" : "";
+                    };
+
+                    layersList.appendChild(link);
+                  });
+                }
 
                 // Handle collapsible behavior
                 if (message.collapsible) {
                   const toggleButton = document.createElement("div");
                   toggleButton.className = "toggle-button";
-                  toggleButton.textContent = "Layers";
+
+                  if (message.use_icon) {
+                    layersControl.classList.add("icon-only");
+                    toggleButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>`;
+                  } else {
+                    toggleButton.textContent = "Layers";
+                  }
+
                   toggleButton.onclick = function () {
                     layersControl.classList.toggle("open");
                   };
@@ -2429,7 +2729,8 @@ HTMLWidgets.widget({
               } else if (message.type === "set_source") {
                 if (map.getLayer(message.layer)) {
                   const sourceId = map.getLayer(message.layer).source;
-                  map.getSource(sourceId).setData(JSON.parse(message.source));
+                  const newData = typeof message.source === "string" ? JSON.parse(message.source) : message.source;
+                  map.getSource(sourceId).setData(newData);
                 }
               } else if (message.type === "set_tooltip") {
                 // Track tooltip state
@@ -2797,7 +3098,7 @@ HTMLWidgets.widget({
           }
         }
 
-        function applyMapModifications(map, mapData) {
+        async function applyMapModifications(map, mapData) {
           // Initialize controls array if it doesn't exist
           if (!map.controls) {
             map.controls = [];
@@ -3059,7 +3360,7 @@ HTMLWidgets.widget({
 
           // Add sources if provided
           if (mapData.sources) {
-            mapData.sources.forEach(function (source) {
+            for (const source of mapData.sources) {
               if (source.type === "vector") {
                 const sourceConfig = {
                   type: "vector",
@@ -3067,6 +3368,23 @@ HTMLWidgets.widget({
                 // Add url or tiles
                 if (source.url) {
                   sourceConfig.url = source.url;
+                  // Auto-detect MLT encoding for PMTiles sources
+                  if (
+                    source.url.startsWith("pmtiles://") &&
+                    typeof pmtiles !== "undefined" &&
+                    !source.encoding
+                  ) {
+                    try {
+                      const rawUrl = source.url.replace("pmtiles://", "");
+                      const p = new pmtiles.PMTiles(rawUrl);
+                      const header = await p.getHeader();
+                      if (header.tileType === pmtiles.TileType.Mlt) {
+                        sourceConfig.encoding = "mlt";
+                      }
+                    } catch (e) {
+                      console.warn("Failed to detect PMTiles tile type:", e);
+                    }
+                  }
                 }
                 if (source.tiles) {
                   sourceConfig.tiles = source.tiles;
@@ -3117,7 +3435,7 @@ HTMLWidgets.widget({
                   coordinates: source.coordinates,
                 });
               }
-            });
+            }
           }
 
           // Add layers if provided
@@ -3145,6 +3463,10 @@ HTMLWidgets.widget({
 
                 if (layer.source_layer) {
                   layerConfig["source-layer"] = layer.source_layer;
+                }
+
+                if (layer.filter) {
+                  layerConfig["filter"] = layer.filter;
                 }
 
                 if (layer.slot) {
@@ -3234,43 +3556,46 @@ HTMLWidgets.widget({
                   map.on("mousemove", layer.id, function (e) {
                     if (e.features.length > 0) {
                       if (hoveredFeatureId !== null) {
-                        map.setFeatureState(
-                          {
-                            source:
-                              typeof layer.source === "string"
-                                ? layer.source
-                                : layer.id,
-                            id: hoveredFeatureId,
-                          },
-                          { hover: false },
-                        );
-                      }
-                      hoveredFeatureId = e.features[0].id;
-                      map.setFeatureState(
-                        {
+                        const featureState = {
                           source:
                             typeof layer.source === "string"
                               ? layer.source
                               : layer.id,
                           id: hoveredFeatureId,
-                        },
-                        { hover: true },
-                      );
+                        };
+                        if (layer.source_layer) {
+                          featureState.sourceLayer = layer.source_layer;
+                        }
+                        map.setFeatureState(featureState, { hover: false });
+                      }
+                      hoveredFeatureId = e.features[0].id;
+                      const featureState = {
+                        source:
+                          typeof layer.source === "string"
+                            ? layer.source
+                            : layer.id,
+                        id: hoveredFeatureId,
+                      };
+                      if (layer.source_layer) {
+                        featureState.sourceLayer = layer.source_layer;
+                      }
+                      map.setFeatureState(featureState, { hover: true });
                     }
                   });
 
                   map.on("mouseleave", layer.id, function () {
                     if (hoveredFeatureId !== null) {
-                      map.setFeatureState(
-                        {
-                          source:
-                            typeof layer.source === "string"
-                              ? layer.source
-                              : layer.id,
-                          id: hoveredFeatureId,
-                        },
-                        { hover: false },
-                      );
+                      const featureState = {
+                        source:
+                          typeof layer.source === "string"
+                            ? layer.source
+                            : layer.id,
+                        id: hoveredFeatureId,
+                      };
+                      if (layer.source_layer) {
+                        featureState.sourceLayer = layer.source_layer;
+                      }
+                      map.setFeatureState(featureState, { hover: false });
                     }
                     hoveredFeatureId = null;
                   });
@@ -4044,25 +4369,8 @@ HTMLWidgets.widget({
               "maplibregl-ctrl-icon maplibregl-ctrl-reset";
             resetControl.type = "button";
             resetControl.setAttribute("aria-label", "Reset");
-            resetControl.innerHTML = "⟲";
-            resetControl.style.fontSize = "30px";
-            resetControl.style.fontWeight = "bold";
-            resetControl.style.backgroundColor = "white";
-            resetControl.style.border = "none";
-            resetControl.style.cursor = "pointer";
-            resetControl.style.padding = "0";
-            resetControl.style.width = "30px";
-            resetControl.style.height = "30px";
-            resetControl.style.display = "flex";
-            resetControl.style.justifyContent = "center";
-            resetControl.style.alignItems = "center";
-            resetControl.style.transition = "background-color 0.2s";
-            resetControl.addEventListener("mouseover", function () {
-              this.style.backgroundColor = "#f0f0f0";
-            });
-            resetControl.addEventListener("mouseout", function () {
-              this.style.backgroundColor = "white";
-            });
+            resetControl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>';
+            resetControl.style.cssText = "display:flex;justify-content:center;align-items:center;cursor:pointer;";
 
             const resetContainer = document.createElement("div");
             resetContainer.className = "maplibregl-ctrl maplibregl-ctrl-group";
@@ -4095,6 +4403,21 @@ HTMLWidgets.widget({
               },
               mapData.reset_control.position,
             );
+          }
+
+          // Add coordinates control if enabled
+          if (mapData.coordinates_control) {
+            const coordinatesControlObj = createCoordinatesControl(
+              mapData.coordinates_control,
+            );
+            map.addControl(
+              coordinatesControlObj,
+              mapData.coordinates_control.position || "bottom-right",
+            );
+            map.controls.push({
+              type: "coordinates",
+              control: coordinatesControlObj,
+            });
           }
 
           function updateDrawnFeatures() {
@@ -4188,6 +4511,7 @@ HTMLWidgets.widget({
                 link.className = initialVisibility === "none" ? "" : "active";
 
                 // Show or hide layer(s) when the toggle is clicked
+                // toggle on BOTH maps in the compare widget
                 link.onclick = function (e) {
                   e.preventDefault();
                   e.stopPropagation();
@@ -4201,18 +4525,14 @@ HTMLWidgets.widget({
                     "visibility",
                   );
 
-                  // Toggle visibility for all layer IDs in the group
-                  if (visibility === "visible") {
-                    layerIds.forEach((layerId) => {
-                      map.setLayoutProperty(layerId, "visibility", "none");
+                  const newVis = visibility === "visible" ? "none" : "visible";
+                  const allMaps = [beforeMap, afterMap];
+                  layerIds.forEach((layerId) => {
+                    allMaps.forEach((m) => {
+                      try { m.setLayoutProperty(layerId, "visibility", newVis); } catch(err) {}
                     });
-                    this.className = "";
-                  } else {
-                    layerIds.forEach((layerId) => {
-                      map.setLayoutProperty(layerId, "visibility", "visible");
-                    });
-                    this.className = "active";
-                  }
+                  });
+                  this.className = newVis === "visible" ? "active" : "";
                 };
 
                 layersList.appendChild(link);
@@ -4227,6 +4547,7 @@ HTMLWidgets.widget({
                 link.className = "active";
 
                 // Show or hide layer when the toggle is clicked
+                // toggle on BOTH maps in the compare widget
                 link.onclick = function (e) {
                   const clickedLayer = this.textContent;
                   e.preventDefault();
@@ -4237,18 +4558,12 @@ HTMLWidgets.widget({
                     "visibility",
                   );
 
-                  // Toggle layer visibility by changing the layout object's visibility property
-                  if (visibility === "visible") {
-                    map.setLayoutProperty(clickedLayer, "visibility", "none");
-                    this.className = "";
-                  } else {
-                    this.className = "active";
-                    map.setLayoutProperty(
-                      clickedLayer,
-                      "visibility",
-                      "visible",
-                    );
-                  }
+                  // toggle on BOTH maps in the compare widget
+                  const newVis = visibility === "visible" ? "none" : "visible";
+                  [beforeMap, afterMap].forEach((m) => {
+                    try { m.setLayoutProperty(clickedLayer, "visibility", newVis); } catch(err) {}
+                  });
+                  this.className = newVis === "visible" ? "active" : "";
                 };
 
                 layersList.appendChild(link);

@@ -84,10 +84,13 @@ reference:
       - add_scale_control
       - add_layers_control
       - add_draw_control
+      - draw_attribute
       - add_geocoder_control
       - add_reset_control
       - add_geolocate_control
       - add_globe_control
+      - add_screenshot_control
+      - add_coordinates_control
       - add_control
       - clear_controls
 
@@ -95,6 +98,7 @@ reference:
     desc: "Functions for adding and managing map legends with customizable styling"
     contents:
       - map_legends
+      - add_bivariate_legend
       - legend_style
       - clear_legend
 
@@ -104,6 +108,12 @@ reference:
       - add_markers
       - clear_markers
 
+  - title: "Static Map Export"
+    desc: "Functions to render maps as static PNG images"
+    contents:
+      - save_map
+      - print_map
+
   - title: "Styling Helpers"
     desc: "Functions to help with map styling and expressions"
     contents:
@@ -111,6 +121,9 @@ reference:
       - maptiler_style
       - carto_style
       - openfreemap_style
+      - esri_style
+      - esri_open_style
+      - basemap_style
       - interpolate
       - match_expr
       - step_expr
@@ -125,6 +138,8 @@ reference:
     contents:
       - step_classification
       - interpolate_palette
+      - bivariate_scale
+      - bivariate_palettes
       - classification_helpers
 
   - title: "Camera and View"

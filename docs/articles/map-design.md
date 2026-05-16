@@ -1,0 +1,356 @@
+# Fundamentals of map design with mapgl
+
+The **mapgl** package aims to expose the powerful map design
+capabilities of Mapbox GL JS and Maplibre GL JS, while still feeling
+intuitive to R users. This means that map-making may require a little
+more code than other mapping packages - but it also gives you maximum
+flexibility in how you design your maps.
+
+Let’s grab some data from **tidycensus** on median age by Census tract
+in Florida and initialize an empty map focused on Florida.
+
+``` r
+library(tidycensus)
+library(mapgl)
+
+fl_age <- get_acs(
+  geography = "tract",
+  variables = "B01002_001",
+  state = "FL",
+  year = 2024,
+  geometry = TRUE
+)
+```
+
+    ## Getting data from the 2020-2024 5-year ACS
+
+``` r
+fl_map <- mapboxgl(mapbox_style("light"),
+                   bounds = fl_age)
+
+fl_map
+```
+
+### Continuous styling
+
+Styling in Mapbox GL JS and Maplibre GL JS is typically handled through
+*expressions*. Expressions allow for quite a bit of customization for
+map-makers, but can feel clunky for R users. **mapgl** includes several
+functions to help R users translate their code into expressions for use
+in their data visualizations.
+
+For continuous color scales, the
+[`interpolate_palette()`](https://walker-data.com/mapgl/reference/interpolate_palette.md)
+function automatically calculates appropriate break points and creates
+smooth color transitions. You can specify the classification method
+(“equal”, “quantile”, or “jenks”) and either a palette function or
+specific colors:
+
+``` r
+# Automatic continuous scale with equal breaks
+continuous_scale <- interpolate_palette(
+  data = fl_age,
+  column = "estimate",
+  method = "equal",
+  n = 5,
+  palette = viridisLite::plasma
+)
+
+fl_map |>
+  add_fill_layer(
+    id = "fl_tracts",
+    source = fl_age,
+    fill_color = continuous_scale$expression,
+    fill_opacity = 0.5
+  ) |>
+  add_legend(
+    "Median age in Florida",
+    values = get_legend_labels(continuous_scale, digits = 0),
+    colors = get_legend_colors(continuous_scale),
+    type = "continuous"
+  )
+```
+
+For lower-level control, the
+[`interpolate()`](https://walker-data.com/mapgl/reference/interpolate.md)
+function creates an `interpolate` expression where you manually specify
+values and stops. This gives you complete control over the color
+mapping:
+
+``` r
+fl_map |>
+  add_fill_layer(
+  id = "fl_tracts",
+  source = fl_age,
+  fill_color = interpolate(
+    column = "estimate",
+    values = c(20, 80),
+    stops = c("lightblue", "darkblue"),
+    na_color = "lightgrey"
+  ),
+  fill_opacity = 0.5
+ ) |>
+  add_legend(
+    "Median age in Florida",
+    values = c(20, 80),
+    colors = c("lightblue", "darkblue")
+  )
+```
+
+You can also let readers switch among several continuous color ramps
+directly from the legend. The map layer is styled with the selected
+ramp, and clicking a different ramp in the legend updates both the
+legend gradient and the map.
+
+``` r
+age_ramps <- list(
+  Viridis = viridisLite::viridis(5),
+  Magma = viridisLite::magma(5),
+  Blue = c("#eff3ff", "#bdd7e7", "#6baed6", "#3182bd", "#08519c"),
+  Fire = c("#ffffcc", "#ffeda0", "#feb24c", "#f03b20", "#bd0026")
+)
+
+age_picker_scale <- interpolate_palette(
+  data = fl_age,
+  column = "estimate",
+  method = "equal",
+  n = 5,
+  color_ramps = age_ramps,
+  selected_ramp = "Viridis",
+  na_color = "lightgrey"
+)
+
+maplibre(
+  style = carto_style("positron"),
+  bounds = fl_age
+) |>
+  add_fill_layer(
+    id = "fl_age_picker",
+    source = fl_age,
+    fill_color = age_picker_scale$expression,
+    fill_opacity = 0.65,
+    fill_outline_color = "rgba(255,255,255,0.25)"
+  ) |>
+  add_legend(
+    "Median age in Florida",
+    values = get_legend_labels(age_picker_scale, digits = 0),
+    colors = age_picker_scale,
+    type = "continuous",
+    layer_id = "fl_age_picker",
+    ramp_picker = TRUE,
+    style = legend_style(
+      background_color = "white",
+      background_opacity = 0.92,
+      border_color = "#d1d5db",
+      border_width = 1,
+      shadow = TRUE
+    )
+  )
+```
+
+### Categorical styling
+
+Cartographers may prefer a binned method for visualizing their data
+rather than the continuous palette shown above. **mapgl** includes
+several classification functions that automate common choropleth
+workflows. The
+[`step_equal_interval()`](https://walker-data.com/mapgl/reference/step_classification.md)
+function creates equal interval breaks, while
+[`step_quantile()`](https://walker-data.com/mapgl/reference/step_classification.md)
+and
+[`step_jenks()`](https://walker-data.com/mapgl/reference/step_classification.md)
+create quantile and Jenks natural breaks respectively.
+
+These functions automatically calculate appropriate break points and
+generate step expressions. You can specify the number of classes and the
+color palette to use:
+
+``` r
+# Automatic quantile classification with 5 classes
+q_class <- step_quantile(
+  data = fl_age,
+  column = "estimate",
+  n = 5,
+  colors = RColorBrewer::brewer.pal(5, "PRGn")
+)
+
+fl_map |>
+  add_fill_layer(
+    id = "fl_tracts",
+    source = fl_age,
+    fill_color = q_class$expression,
+    fill_opacity = 0.5
+  ) |>
+  add_legend(
+    "Median age in Florida",
+    values = get_legend_labels(q_class, digits = 0, suffix = " years"),
+    colors = get_legend_colors(q_class),
+    type = "categorical"
+  )
+```
+
+For lower-level control, you can still use the
+[`step_expr()`](https://walker-data.com/mapgl/reference/step_expr.md)
+function directly. Step expressions require a `base` value followed by a
+series of `stops` and threshold `values`:
+
+``` r
+brewer_pal <- RColorBrewer::brewer.pal(5, "RdYlBu")
+
+fl_map |>
+  add_fill_layer(
+  id = "fl_tracts",
+  source = fl_age,
+  fill_color = step_expr(
+    column = "estimate",
+    base = brewer_pal[1],
+    stops = brewer_pal[2:5],
+    values = seq(25, 70, 15),
+    na_color = "white"
+  ),
+  fill_opacity = 0.5
+ ) |>
+  add_legend(
+    "Median age in Florida",
+    values = c(
+      "Under 25",
+      "25-40",
+      "40-55",
+      "55-70",
+      "Above 70"
+    ),
+    colors = brewer_pal,
+    type = "categorical"
+  )
+```
+
+### Pop-ups, tooltips, and highlighting
+
+Mapmakers will often want to expose some additional interactivity to
+their users in the form of on-click popups, hover tooltips, and other
+hover effects. In native JavaScript, this can be tricky to set up as it
+requires knowledge of events, queries, and feature states in these
+libraries. **mapgl** wraps this functionality to make these features
+accessible to R users.
+
+The `popup` and `tooltip` arguments take a string as input representing
+the name of the column to display on click or on hover. Both arguments
+accommodate HTML, so the best way to set this up is to create a column
+of values to display in the popup or tooltip, then use this column when
+adding the layer.
+
+Hover effects can be set with the `hover_options` argument. This
+argument takes a list of key-value pairs where the keys are arguments
+for a given layer type (in this case, the fill layer) and arguments are
+the desired values on hover. In the example shown here, we tell Mapbox
+GL JS to change a Census tract’s fill to yellow and fill opacity to 1
+when the users hovers over the tract.
+
+``` r
+fl_age$popup <- glue::glue(
+  "<strong>GEOID: </strong>{fl_age$GEOID}<br><strong>Median age: </strong>{fl_age$estimate}"
+)
+
+fl_map |>
+  add_fill_layer(
+  id = "fl_tracts",
+  source = fl_age,
+  fill_color = interpolate(
+    column = "estimate",
+    values = c(20, 80),
+    stops = c("lightblue", "darkblue"),
+    na_color = "lightgrey"
+  ),
+  fill_opacity = 0.5,
+  popup = "popup",
+  tooltip = "estimate",
+  hover_options = list(
+    fill_color = "yellow",
+    fill_opacity = 1
+  )
+ ) |>
+  add_legend(
+    "Median age in Florida",
+    values = c(20, 80),
+    colors = c("lightblue", "darkblue")
+  )
+```
+
+### Bivariate styling
+
+Bivariate maps visualize two variables at once by assigning each feature
+to a joint class. In this example, we’ll compare median age and median
+household income for Florida Census tracts.
+
+The built-in bivariate palettes are 3-by-3 matrices. Rows represent the
+y-variable from low to high, and columns represent the x-variable from
+low to high. You can inspect the available palettes with
+`names(bivariate_palettes())`, or pass your own 3-by-3 matrix to the
+`colors` argument in
+[`bivariate_scale()`](https://walker-data.com/mapgl/reference/bivariate_scale.md).
+By default,
+[`bivariate_scale()`](https://walker-data.com/mapgl/reference/bivariate_scale.md)
+uses quantile breaks; pass `x_breaks` and `y_breaks` as four-value
+numeric vectors when you need stable bins across maps or filtered views.
+
+``` r
+fl_age_income <- get_acs(
+  geography = "tract",
+  variables = c(
+    median_age = "B01002_001",
+    median_income = "B19013_001"
+  ),
+  state = "FL",
+  year = 2024,
+  geometry = TRUE,
+  output = "wide"
+)
+```
+
+    ## Getting data from the 2020-2024 5-year ACS
+
+``` r
+names(fl_age_income) <- sub("E$", "", names(fl_age_income))
+
+fl_age_income$popup <- glue::glue(
+  "<strong>GEOID: </strong>{fl_age_income$GEOID}<br>",
+  "<strong>Median age: </strong>{round(fl_age_income$median_age, 1)}<br>",
+  "<strong>Median household income: </strong>${format(round(fl_age_income$median_income), big.mark = ',')}"
+)
+
+age_income_scale <- bivariate_scale(
+  data = fl_age_income,
+  x = "median_income",
+  y = "median_age", na_color = "white", palette = "blue_red"
+)
+
+maplibre(
+  style = carto_style("positron"),
+  bounds = fl_age_income
+) |>
+  add_fill_layer(
+    id = "fl_age_income",
+    source = fl_age_income,
+    fill_color = age_income_scale$expression,
+    fill_opacity = 0.75,
+    fill_outline_color = "rgba(255,255,255,0.25)",
+    popup = "popup",
+    hover_options = list(
+      fill_opacity = 1
+    )
+  ) |>
+  add_bivariate_legend(
+    age_income_scale,
+    legend_title = "Age and income",
+    x_title = "Higher income",
+    y_title = "Older median age",
+    layer_id = "fl_age_income",
+    style = legend_style(
+      background_color = "white",
+      background_opacity = 0.94,
+      border_color = "#d1d5db",
+      border_width = 1,
+      shadow = TRUE
+    )
+  )
+```

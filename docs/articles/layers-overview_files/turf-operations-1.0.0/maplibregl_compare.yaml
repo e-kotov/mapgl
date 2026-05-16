@@ -1,6 +1,6 @@
 dependencies:
   - name: maplibre-gl
-    version: "5.13.0"
+    version: "5.22.0"
     src: "htmlwidgets/lib/maplibre-gl"
     script:
       - "maplibre-gl.js"
@@ -14,7 +14,7 @@ dependencies:
     stylesheet:
       - "maplibre-gl-compare.css"
   - name: mapbox-gl-draw
-    version: "1.5.0"
+    version: "1.5.1"
     src: "htmlwidgets/lib/mapbox-gl-draw"
     script:
       - "mapbox-gl-draw.js"
@@ -65,3 +65,10 @@ dependencies:
       - "maplibregl.umd.js"
     stylesheet:
       - "style.css"
+  - name: legend-interactivity
+    version: "1.0.0"
+    src: "htmlwidgets/lib/legend-interactivity"
+    script:
+      - "legend-interactivity.js"
+    stylesheet:
+      - "legend-interactivity.css"

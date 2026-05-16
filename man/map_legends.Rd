@@ -12,8 +12,8 @@
 add_legend(
   map,
   legend_title,
-  values,
-  colors,
+  values = NULL,
+  colors = NULL,
   type = c("continuous", "categorical"),
   circular_patches = FALSE,
   patch_shape = "square",
@@ -28,7 +28,22 @@ add_legend(
   margin_bottom = NULL,
   margin_left = NULL,
   style = NULL,
-  target = NULL
+  target = NULL,
+  interactive = FALSE,
+  filter_column = NULL,
+  filter_values = NULL,
+  classification = NULL,
+  breaks = NULL,
+  color_ramps = NULL,
+  selected_ramp = NULL,
+  ramp_picker = !is.null(color_ramps),
+  ramp_labels = TRUE,
+  color_column = NULL,
+  color_property = NULL,
+  na_color = NULL,
+  draggable = FALSE,
+  collapsible = FALSE,
+  collapsed = FALSE
 )
 
 add_categorical_legend(
@@ -48,7 +63,14 @@ add_categorical_legend(
   margin_right = NULL,
   margin_bottom = NULL,
   margin_left = NULL,
-  style = NULL
+  style = NULL,
+  interactive = FALSE,
+  filter_column = NULL,
+  filter_values = NULL,
+  breaks = NULL,
+  draggable = FALSE,
+  collapsible = FALSE,
+  collapsed = FALSE
 )
 
 add_continuous_legend(
@@ -65,7 +87,20 @@ add_continuous_legend(
   margin_right = NULL,
   margin_bottom = NULL,
   margin_left = NULL,
-  style = NULL
+  style = NULL,
+  interactive = FALSE,
+  filter_column = NULL,
+  filter_values = NULL,
+  draggable = FALSE,
+  color_ramps = NULL,
+  selected_ramp = NULL,
+  ramp_picker = !is.null(color_ramps),
+  ramp_labels = TRUE,
+  color_column = NULL,
+  color_property = NULL,
+  na_color = NULL,
+  collapsible = FALSE,
+  collapsed = FALSE
 )
 
 \method{add_legend}{mapboxgl_compare}(
@@ -87,7 +122,22 @@ add_continuous_legend(
   margin_bottom = NULL,
   margin_left = NULL,
   style = NULL,
-  target = "compare"
+  target = "compare",
+  interactive = FALSE,
+  filter_column = NULL,
+  filter_values = NULL,
+  classification = NULL,
+  breaks = NULL,
+  color_ramps = NULL,
+  selected_ramp = NULL,
+  ramp_picker = !is.null(color_ramps),
+  ramp_labels = TRUE,
+  color_column = NULL,
+  color_property = NULL,
+  na_color = NULL,
+  draggable = FALSE,
+  collapsible = FALSE,
+  collapsed = FALSE
 )
 
 \method{add_legend}{maplibre_compare}(
@@ -109,7 +159,22 @@ add_continuous_legend(
   margin_bottom = NULL,
   margin_left = NULL,
   style = NULL,
-  target = "compare"
+  target = "compare",
+  interactive = FALSE,
+  filter_column = NULL,
+  filter_values = NULL,
+  classification = NULL,
+  breaks = NULL,
+  color_ramps = NULL,
+  selected_ramp = NULL,
+  ramp_picker = !is.null(color_ramps),
+  ramp_labels = TRUE,
+  color_column = NULL,
+  color_property = NULL,
+  na_color = NULL,
+  draggable = FALSE,
+  collapsible = FALSE,
+  collapsed = FALSE
 )
 }
 \arguments{
@@ -137,7 +202,7 @@ add_continuous_legend(
 
 \item{width}{The width of the legend. Can be specified in pixels (e.g., "250px") or as "auto". Default is NULL, which uses the built-in default.}
 
-\item{layer_id}{The ID of the layer that this legend is associated with. If provided, the legend will be shown/hidden when the layer visibility is toggled.}
+\item{layer_id}{The ID of the layer (or a character vector of layer IDs) that this legend is associated with. If provided, the legend will be shown/hidden when the layer visibility is toggled. When multiple layer IDs are provided with \code{interactive = TRUE}, the legend will filter all specified layers simultaneously.}
 
 \item{margin_top}{Custom top margin in pixels, allowing for fine control over legend positioning. Default is NULL (uses standard positioning).}
 
@@ -150,6 +215,36 @@ add_continuous_legend(
 \item{style}{Optional styling options created by \code{legend_style()} or a list of style options.}
 
 \item{target}{For compare objects only: where to place the legend. Can be "compare" (attached to compare container, persists during swipe), "before" (attached to left/top map), or "after" (attached to right/bottom map). Default is "compare".}
+
+\item{interactive}{Logical, whether to make the legend interactive. For categorical legends, clicking on legend items will toggle the visibility of the corresponding features. For continuous legends, a range slider will appear allowing users to filter features by value. Default is FALSE. Note: interactive legends are not yet supported for compare maps.}
+
+\item{filter_column}{Character, the name of the data column to use for filtering when interactive is TRUE. If NULL (default), the column will be auto-detected from the layer's paint expression.}
+
+\item{filter_values}{For interactive legends, the actual data values to filter on. For categorical legends, use this when your display labels differ from the data values (e.g., values = c("Music", "Bar") for display, filter_values = c("music", "bar") for filtering). For continuous legends, provide numeric break values when using formatted display labels (e.g., values = get_legend_labels(scale), filter_values = get_breaks(scale)). If NULL (default), uses values.}
+
+\item{classification}{A mapgl_classification object (from step_quantile, step_equal_interval, etc.) to use for the legend. When provided, values and colors will be automatically extracted. For interactive legends, range-based filtering will be used based on the classification breaks.}
+
+\item{breaks}{Numeric vector of break points for filtering with classification-based legends. Typically extracted automatically from the classification object. Only needed if you want to override the default breaks.}
+
+\item{color_ramps}{For continuous legends, a list of color vectors to expose in a color-ramp picker. Named lists use the names as picker labels; unnamed lists get generated labels.}
+
+\item{selected_ramp}{The initially selected ramp name or index when \code{color_ramps} is provided.}
+
+\item{ramp_picker}{Logical, whether to show the continuous legend color-ramp picker.}
+
+\item{ramp_labels}{Logical, whether to show palette labels in the color-ramp picker.}
+
+\item{color_column}{Character, the data column to use when restyling the layer. If NULL, mapgl attempts to auto-detect it from the layer paint expression.}
+
+\item{color_property}{Character, the paint property to restyle. If NULL, mapgl attempts to auto-detect one of \code{fill-color}, \code{circle-color}, \code{line-color}, or \code{fill-extrusion-color}.}
+
+\item{na_color}{Color to use for missing values when rebuilding the interpolation expression.}
+
+\item{draggable}{Logical, whether the legend can be dragged to a new position by the user. Default is FALSE.}
+
+\item{collapsible}{Logical, whether to render a toggle button that collapses the legend to a header-only view. Default is FALSE. Most useful for categorical legends with tall bodies on small viewports.}
+
+\item{collapsed}{Logical, whether the legend starts in the collapsed state. Only applies when \code{collapsible = TRUE}. Default is FALSE.}
 }
 \value{
 The updated map object with the legend added.
@@ -157,6 +252,21 @@ The updated map object with the legend added.
 \description{
 These functions add categorical and continuous legends to maps. Use \code{legend_style()}
 to customize appearance and \code{clear_legend()} to remove legends.
+}
+\details{
+\strong{Collapsible legends.} When \code{collapsible = TRUE}, a 26x26px toggle
+button is rendered in the legend's top-right corner. Collapsed, only the
+title heading and the toggle button remain visible; every other direct
+child of the legend (subtitles, swatches, item labels, the reset-filter
+button from interactive legends, any user-appended source footers) is
+hidden via CSS. The toggle button inherits \code{border_color} and
+\code{text_color} from \code{\link{legend_style}()} so it picks up your
+legend theme.
+
+If you inject your own title block via \code{htmlwidgets::onRender()} --
+for example, to add a styled heading above the default title -- mark that
+element with \code{class="mapgl-legend-title"} so it stays visible when
+collapsed.
 }
 \examples{
 \dontrun{

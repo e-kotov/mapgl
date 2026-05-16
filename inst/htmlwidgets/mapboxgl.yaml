@@ -1,16 +1,16 @@
 dependencies:
   - name: mapbox-gl-js
-    version: "3.16.0"
+    version: "3.21.0"
     src:
-      href: "https://api.mapbox.com/mapbox-gl-js/v3.16.0/"
+      href: "https://api.mapbox.com/mapbox-gl-js/v3.21.0"
     script:
       - "mapbox-gl.js"
     stylesheet:
       - "mapbox-gl.css"
   - name: mapbox-gl-draw
-    version: "1.5.0"
+    version: "1.5.1"
     src:
-      href: "https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.5.0/"
+      href: "https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.5.1"
     script:
       - "mapbox-gl-draw.js"
     stylesheet:
@@ -30,10 +30,15 @@ dependencies:
     src: "htmlwidgets/lib/radius-mode"
     script:
       - "radius-mode.js"
+  - name: bezier-mode
+    version: 1.1.0
+    src: "htmlwidgets/lib/bezier-mode"
+    script:
+      - "bezier-mode.js"
   - name: mapbox-gl-geocoder
     version: 5.0.0
     src:
-      href: "https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/"
+      href: "https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0"
     script:
       - "mapbox-gl-geocoder.min.js"
     stylesheet:
@@ -44,7 +49,7 @@ dependencies:
     script:
       - "bundle.js"
   - name: pmtiles
-    version: 4.3.0
+    version: 4.4.0
     src: "htmlwidgets/lib/pmtiles"
     script:
       - "pmtiles.js"
@@ -82,3 +87,15 @@ dependencies:
     version: 1.0.0
     src: "htmlwidgets/lib/flowmap-settings"
     script: "flowmap-settings.js"
+  - name: screenshot
+    version: "1.0.0"
+    src: "htmlwidgets"
+    script:
+      - "screenshot.js"
+  - name: legend-interactivity
+    version: "1.0.0"
+    src: "htmlwidgets/lib/legend-interactivity"
+    script:
+      - "legend-interactivity.js"
+    stylesheet:
+      - "legend-interactivity.css"

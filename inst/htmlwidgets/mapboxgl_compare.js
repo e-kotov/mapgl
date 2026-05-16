@@ -60,6 +60,221 @@ function evaluateExpression(expression, properties) {
   }
 }
 
+function formatDmsCoordinate(value, axis, precision) {
+  const direction =
+    axis === "lng" ? (value < 0 ? "W" : "E") : value < 0 ? "S" : "N";
+  const absolute = Math.abs(value);
+  let degrees = Math.floor(absolute);
+  const minutesFloat = (absolute - degrees) * 60;
+  let minutes = Math.floor(minutesFloat);
+  let seconds = (minutesFloat - minutes) * 60;
+
+  const factor = Math.pow(10, precision);
+  seconds = Math.round(seconds * factor) / factor;
+  if (seconds >= 60) {
+    seconds = 0;
+    minutes += 1;
+  }
+  if (minutes >= 60) {
+    minutes = 0;
+    degrees += 1;
+  }
+
+  const secondsText = seconds
+    .toFixed(precision)
+    .padStart(precision > 0 ? precision + 3 : 2, "0");
+  return `${degrees}\u00b0${String(minutes).padStart(2, "0")}'${secondsText}"${direction}`;
+}
+
+function formatCoordinates(lngLat, format, precision) {
+  if (format === "dms") {
+    return `${formatDmsCoordinate(lngLat.lng, "lng", precision)}, ${formatDmsCoordinate(lngLat.lat, "lat", precision)}`;
+  }
+  return `${lngLat.lng.toFixed(precision)}, ${lngLat.lat.toFixed(precision)}`;
+}
+
+function createCoordinatesControl(options) {
+  const controlOptions = options || {};
+  const format = controlOptions.format || "decimal";
+  const precisionValue = Number(controlOptions.precision);
+  const precision = Number.isFinite(precisionValue)
+    ? Math.min(20, Math.max(0, Math.floor(precisionValue)))
+    : format === "dms" ? 1 : 5;
+  const emptyText = controlOptions.empty_text || "Move cursor over map";
+  const labelText = controlOptions.label || "";
+  const wrapLongitude = controlOptions.wrap !== false;
+
+  const container = document.createElement("div");
+  container.className = "mapgl-coordinates-control mapboxgl-ctrl";
+  container.style.cssText = `
+    background: #ffffff;
+    padding: 8px 10px;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+    color: #222;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 12px;
+    line-height: 1.35;
+    min-width: 142px;
+    max-width: 240px;
+    border: 1px solid rgba(0,0,0,0.1);
+    pointer-events: none;
+  `;
+
+  if (labelText) {
+    const label = document.createElement("div");
+    label.className = "mapgl-coordinates-label";
+    label.textContent = labelText;
+    label.style.cssText = `
+      margin-bottom: 2px;
+      color: #666;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    `;
+    container.appendChild(label);
+  }
+
+  const value = document.createElement("div");
+  value.className = "mapgl-coordinates-value";
+  value.textContent = emptyText;
+  value.style.cssText = `
+    color: #111;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  `;
+  container.appendChild(value);
+
+  let mapRef = null;
+  const update = (event) => {
+    if (!event || !event.lngLat) return;
+    const lngLat =
+      wrapLongitude && typeof event.lngLat.wrap === "function"
+        ? event.lngLat.wrap()
+        : event.lngLat;
+    value.textContent = formatCoordinates(lngLat, format, precision);
+  };
+  const clear = () => {
+    value.textContent = emptyText;
+  };
+
+  return {
+    onAdd: function (map) {
+      mapRef = map;
+      mapRef.on("mousemove", update);
+      mapRef.getCanvas().addEventListener("mouseleave", clear);
+      return container;
+    },
+    onRemove: function () {
+      if (mapRef) {
+        mapRef.off("mousemove", update);
+        mapRef.getCanvas().removeEventListener("mouseleave", clear);
+      }
+      if (container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
+      mapRef = null;
+    },
+  };
+}
+
+function createMapglLaserPointer(options) {
+  const pointerOptions = options || {};
+  const color = pointerOptions.color || "#ff2d55";
+  const sizeValue = Number(pointerOptions.size);
+  const size = Number.isFinite(sizeValue) && sizeValue > 0 ? sizeValue : 14;
+
+  const pointer = document.createElement("div");
+  pointer.className = "mapgl-sync-laser-pointer";
+  pointer.style.cssText = `
+    position: absolute;
+    display: none;
+    width: ${size}px;
+    height: ${size}px;
+    margin: 0;
+    padding: 0;
+    border: 2px solid ${color};
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.9), 0 0 14px ${color};
+    box-sizing: border-box;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+  `;
+
+  const dot = document.createElement("div");
+  dot.style.cssText = `
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: ${color};
+    transform: translate(-50%, -50%);
+  `;
+  pointer.appendChild(dot);
+  return pointer;
+}
+
+function setupSyncLaserPointer(beforeMap, afterMap, options) {
+  const beforePointer = createMapglLaserPointer(options);
+  const afterPointer = createMapglLaserPointer(options);
+  const beforeContainer = beforeMap.getContainer();
+  const afterContainer = afterMap.getContainer();
+
+  beforeContainer.appendChild(beforePointer);
+  afterContainer.appendChild(afterPointer);
+
+  const hide = (pointer) => {
+    pointer.style.display = "none";
+  };
+
+  const update = (targetMap, pointer, event) => {
+    if (!event || !event.lngLat || !targetMap || !pointer) return;
+
+    const point = targetMap.project(event.lngLat);
+    const container = targetMap.getContainer();
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+
+    if (
+      point.x < 0 ||
+      point.y < 0 ||
+      point.x > width ||
+      point.y > height
+    ) {
+      hide(pointer);
+      return;
+    }
+
+    pointer.style.display = "block";
+    pointer.style.left = `${point.x}px`;
+    pointer.style.top = `${point.y}px`;
+  };
+
+  const beforeMove = (event) => update(afterMap, afterPointer, event);
+  const afterMove = (event) => update(beforeMap, beforePointer, event);
+  const beforeLeave = () => hide(afterPointer);
+  const afterLeave = () => hide(beforePointer);
+
+  beforeMap.on("mousemove", beforeMove);
+  afterMap.on("mousemove", afterMove);
+  beforeMap.getCanvas().addEventListener("mouseleave", beforeLeave);
+  afterMap.getCanvas().addEventListener("mouseleave", afterLeave);
+
+  return function cleanupSyncLaserPointer() {
+    beforeMap.off("mousemove", beforeMove);
+    afterMap.off("mousemove", afterMove);
+    beforeMap.getCanvas().removeEventListener("mouseleave", beforeLeave);
+    afterMap.getCanvas().removeEventListener("mouseleave", afterLeave);
+    beforePointer.remove();
+    afterPointer.remove();
+  };
+}
+
 function onMouseMoveTooltip(e, map, tooltipPopup, tooltipProperty, layerId) {
   if (e.features.length > 0) {
     // Query all features at this point to determine z-order
@@ -364,6 +579,10 @@ HTMLWidgets.widget({
 
           // Initialize the sync
           syncMaps();
+
+          if (x.laser && x.laser.enabled) {
+            setupSyncLaserPointer(beforeMap, afterMap, x.laser);
+          }
         }
 
         // Ensure both maps resize correctly
@@ -407,9 +626,29 @@ HTMLWidgets.widget({
               } else if (legendInfo.target === "before") {
                 // Append to the before map container
                 beforeMap.getContainer().appendChild(legend);
+                if (
+                  legendInfo.interactivity &&
+                  typeof initializeLegendInteractivity === "function"
+                ) {
+                  initializeLegendInteractivity(
+                    beforeMap,
+                    beforeMap.getContainer().id,
+                    legendInfo.interactivity,
+                  );
+                }
               } else if (legendInfo.target === "after") {
                 // Append to the after map container
                 afterMap.getContainer().appendChild(legend);
+                if (
+                  legendInfo.interactivity &&
+                  typeof initializeLegendInteractivity === "function"
+                ) {
+                  initializeLegendInteractivity(
+                    afterMap,
+                    afterMap.getContainer().id,
+                    legendInfo.interactivity,
+                  );
+                }
               }
             });
           }
@@ -928,6 +1167,16 @@ HTMLWidgets.widget({
                 // Append legend to the correct map container
                 const targetContainer = map.getContainer();
                 targetContainer.appendChild(legend);
+                if (
+                  message.interactivity &&
+                  typeof initializeLegendInteractivity === "function"
+                ) {
+                  initializeLegendInteractivity(
+                    map,
+                    targetContainer.id,
+                    message.interactivity,
+                  );
+                }
               } else if (message.type === "set_config_property") {
                 map.setConfigProperty(
                   message.importId,
@@ -1287,25 +1536,8 @@ HTMLWidgets.widget({
                   "mapboxgl-ctrl-icon mapboxgl-ctrl-reset";
                 resetControl.type = "button";
                 resetControl.setAttribute("aria-label", "Reset");
-                resetControl.innerHTML = "⟲";
-                resetControl.style.fontSize = "30px";
-                resetControl.style.fontWeight = "bold";
-                resetControl.style.backgroundColor = "white";
-                resetControl.style.border = "none";
-                resetControl.style.cursor = "pointer";
-                resetControl.style.padding = "0";
-                resetControl.style.width = "30px";
-                resetControl.style.height = "30px";
-                resetControl.style.display = "flex";
-                resetControl.style.justifyContent = "center";
-                resetControl.style.alignItems = "center";
-                resetControl.style.transition = "background-color 0.2s";
-                resetControl.addEventListener("mouseover", function () {
-                  this.style.backgroundColor = "#f0f0f0";
-                });
-                resetControl.addEventListener("mouseout", function () {
-                  this.style.backgroundColor = "white";
-                });
+                resetControl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>';
+                resetControl.style.cssText = "display:flex;justify-content:center;align-items:center;cursor:pointer;";
 
                 const resetContainer = document.createElement("div");
                 resetContainer.className = "mapboxgl-ctrl mapboxgl-ctrl-group";
@@ -1343,6 +1575,17 @@ HTMLWidgets.widget({
                   map.controls = [];
                 }
                 map.controls.push({ type: "reset", control: resetControlObj });
+              } else if (message.type === "add_coordinates_control") {
+                const coordinatesControlObj = createCoordinatesControl(message.options);
+                map.addControl(
+                  coordinatesControlObj,
+                  message.options.position || "bottom-right",
+                );
+
+                if (!map.controls) {
+                  map.controls = [];
+                }
+                map.controls.push({ type: "coordinates", control: coordinatesControlObj });
               } else if (message.type === "add_draw_control") {
                 let drawOptions = message.options || {};
 
@@ -1865,7 +2108,8 @@ HTMLWidgets.widget({
               } else if (message.type === "set_source") {
                 if (map.getLayer(message.layer)) {
                   const sourceId = map.getLayer(message.layer).source;
-                  map.getSource(sourceId).setData(JSON.parse(message.source));
+                  const newData = typeof message.source === "string" ? JSON.parse(message.source) : message.source;
+                  map.getSource(sourceId).setData(newData);
                 }
               } else if (message.type === "set_tooltip") {
                 // Track tooltip state
@@ -3153,25 +3397,8 @@ HTMLWidgets.widget({
             resetControl.className = "mapboxgl-ctrl-icon mapboxgl-ctrl-reset";
             resetControl.type = "button";
             resetControl.setAttribute("aria-label", "Reset");
-            resetControl.innerHTML = "⟲";
-            resetControl.style.fontSize = "30px";
-            resetControl.style.fontWeight = "bold";
-            resetControl.style.backgroundColor = "white";
-            resetControl.style.border = "none";
-            resetControl.style.cursor = "pointer";
-            resetControl.style.padding = "0";
-            resetControl.style.width = "30px";
-            resetControl.style.height = "30px";
-            resetControl.style.display = "flex";
-            resetControl.style.justifyContent = "center";
-            resetControl.style.alignItems = "center";
-            resetControl.style.transition = "background-color 0.2s";
-            resetControl.addEventListener("mouseover", function () {
-              this.style.backgroundColor = "#f0f0f0";
-            });
-            resetControl.addEventListener("mouseout", function () {
-              this.style.backgroundColor = "white";
-            });
+            resetControl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>';
+            resetControl.style.cssText = "display:flex;justify-content:center;align-items:center;cursor:pointer;";
 
             const resetContainer = document.createElement("div");
             resetContainer.className = "mapboxgl-ctrl mapboxgl-ctrl-group";
@@ -3204,6 +3431,21 @@ HTMLWidgets.widget({
               },
               mapData.reset_control.position,
             );
+          }
+
+          // Add coordinates control if enabled
+          if (mapData.coordinates_control) {
+            const coordinatesControlObj = createCoordinatesControl(
+              mapData.coordinates_control,
+            );
+            map.addControl(
+              coordinatesControlObj,
+              mapData.coordinates_control.position || "bottom-right",
+            );
+            map.controls.push({
+              type: "coordinates",
+              control: coordinatesControlObj,
+            });
           }
 
           // Add the layers control if provided

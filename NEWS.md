@@ -1,7 +1,82 @@
+# mapgl 0.5.0
+
+* New bivariate mapping support with `bivariate_scale()`, `bivariate_palettes()`, and `add_bivariate_legend()`. Bivariate scales use 3-by-3 palettes, support custom 3-by-3 color matrices, optional `x_breaks` and `y_breaks` for stable bins, and explicit `na_color` handling (#181).
+
+* Continuous legends can now expose an opt-in color-ramp picker. Use `color_ramps`, `selected_ramp`, and `ramp_picker = TRUE` with continuous legends to let readers switch palettes directly from the legend; named ramps display labels by default, and `ramp_labels = FALSE` creates a compact picker.
+
+* `interpolate_palette()` now carries additional scale metadata for downstream legends, including the source column, missing-value color, available color ramps, and selected ramp.
+
+* Compare maps now initialize legend interactivity assets so supported dynamic legend features can be used in compare views.
+
+* GitHub source archives are now slimmed with `.gitattributes export-ignore` rules for generated site and vignette assets. This preserves GitHub Pages content in the repository while avoiding large downloads during GitHub-based package installs.
+
+# mapgl 0.4.6
+
+* New `save_map()` function renders a map widget to a static PNG file using headless Chrome via the chromote package. Supports options for hiding controls, including/excluding legends and scale bars, replacing the basemap with a solid color, and retina-quality output with `image_scale`. New `print_map()` function provides the same capability for use in Quarto and R Markdown documents.
+
+* Update MapLibre GL JS to v5.22.0 and Mapbox GL JS to v3.21.0.
+
+* Mapbox GL JS v3.21.0 adds native PMTiles support via the TileProvider API. `add_pmtiles_source()` now uses the native vector tile path for Mapbox, removing the need for the custom PMTiles source implementation for vector tiles.
+
+* Support for color tables and categorical rasters in `add_image_source()` (#21).
+
+* New layer properties: `circle_emissive_strength`, `circle_pitch_alignment`, `circle_pitch_scale`, `fill_pattern_cross_fade`, `line_elevation_reference`, `line_elevation_ground_scale`, `line_pattern_cross_fade`, `fill_extrusion_emissive_strength`, `fill_extrusion_ambient_occlusion_intensity`, `fill_extrusion_ambient_occlusion_radius`, `fill_extrusion_cast_shadows`, `fill_extrusion_cutoff_fade_range`, `fill_extrusion_vertical_gradient`, `raster_color`, `raster_color_mix`, `raster_color_range`, `raster_emissive_strength`, `icon_occlusion_opacity`, `text_occlusion_opacity`.
+
+* `sfc` geometry vectors are now accepted wherever `sf` objects are accepted, including layer functions, quickview functions, and the `bounds` parameter (#177).
+
+* Various bug fixes and performance improvements (see GitHub issues for full list).
+
+# mapgl 0.4.5
+
+* **Esri styles support**: New `esri_style()` function provides access to Esri basemap styles for use with MapLibre maps, with support for ArcGIS API key authentication.
+
+* **MLT format support**: Updated PMTiles implementation to support the MapLibre Tiles (MLT) format.
+
+* Update Mapbox GL JS to v3.19.1 and MapLibre GL JS to v5.19.0.
+
+* **Bug fixes and improvements**:
+  - Fixed interactive legend edge case where max value could disappear when adjusting the low-end slider (#167)
+  - Fixed control stacking issue when reactives are used in map initialization functions
+  - Improved `add_reset_control()` button to match the visual style of other navigation controls (#168)
+  - Fixed trailing slash in Mapbox GL JS CDN URLs that could cause 404 errors on library load (#176)
+  - Geocoder control now properly hidden when using screenshot control (#169)
+  - Fixed `set_source()` not working with `maplibre_compare_proxy()` and `mapboxgl_compare_proxy()` (#171)
+  - Documentation updates (#175)
+
+# mapgl 0.4.4
+
+* Update Mapbox GL JS to v3.17.0 and MapLibre GL JS to v5.15.0.
+
+* **Interactive legends**: New opt-in interactivity for map legends enables direct data filtering from the legend:
+  - Categorical legends: Click legend items to toggle category visibility on the map. Disabled categories are visually indicated with reduced opacity and strikethrough text.
+  - Continuous legends: Drag dual handles on the gradient bar to filter data within a selected range. Ghost overlays indicate excluded regions, and the middle section can be dragged to pan the selection window.
+  - New parameters `interactive = TRUE`, `filter_column`, `filter_values`, and `classification` in legend functions
+  - Smart number formatting with K/M notation for large values in legend labels
+  - New `interactive_legend` parameter in `maplibre_view()` and `mapboxgl_view()` for quick interactive visualizations
+  - Full Shiny integration with filter state available via input values
+  - Works with GeoJSON, vector tiles, and PMTiles sources
+
+* **Draggable legends**: New `draggable = TRUE` parameter allows users to drag legends to any position on the map. Supports both mouse and touch interactions.
+
+* **Screenshot control**: New `add_screenshot_control()` function allows users to capture and download map screenshots as PNG images. Includes `image_scale` parameter for controlling output resolution.
+
+* **Globe projection for compare views**: Compare maps in MapLibre now properly respect globe projection when specified.
+
+* **Bug fixes and improvements**:
+  - Fixed floating-point precision issue in interactive legend filters that could exclude edge values
+  - Fixed continuous legend error when values are pre-formatted character strings (e.g., from `get_legend_labels()`)
+  - Fixed draw control source handling for better feature management (#164)
+  - Fixed `step_expr()` to properly handle quoted column names (#148)
+  - Fixed layer visibility state synchronization on style changes (#159)
+  - Images added via `add_image()` now persist across `set_style()` calls
+  - Measurement display box properly removed when draw control is cleared
+  - Added warning when fill extrusion layers are used with MapLibre globe projection (unsupported)
+  - Improved categorical color palette usage in quickview functions
+
 # mapgl 0.4.3
 
-* Update Mapbox GL JS, MapLibre GL JS, and Turf.js versions 
-The `bounds` argument in `maplibre()` and `mapboxgl()` now accepts `sf::st_bbox()` output with automatic CRS transformation to EPSG:4326.
+* Update Mapbox GL JS, MapLibre GL JS, and Turf.js versions.
+* The `bounds` argument in `maplibre()` and `mapboxgl()` now accepts `sf::st_bbox()` output with automatic CRS transformation to EPSG:4326.
 * Fixed control duplication when `set_style()` is called in Shiny applications.
 * Fixed `clear_controls()` not properly removing controls.
 * Added `projection` argument to `maplibre()` for consistency with `mapboxgl()`.
