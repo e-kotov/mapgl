@@ -9,29 +9,40 @@ add_flowmap(
   id,
   locations,
   flows,
-  color_scheme = "Teal",
-  dark_mode = TRUE,
-  animation_enabled = FALSE,
-  fade_enabled = TRUE,
-  fade_amount = 50,
-  fade_opacity_enabled = FALSE,
-  locations_enabled = TRUE,
-  location_totals_enabled = TRUE,
-  location_labels_enabled = FALSE,
-  clustering_enabled = TRUE,
-  clustering_auto = TRUE,
-  clustering_level = NULL,
-  adaptive_scales_enabled = TRUE,
-  highlight_color = "#ff9b29",
-  max_top_flows = 5000,
-  opacity = 1,
-  outline_width = 0,
-  clustering_method = "HCA",
-  show_settings_menu = FALSE,
-  dim_basemap = NULL,
-  blend_mode = c("normal", "screen", "glow"),
+  flow_color_scheme = "Teal",
+  flow_dark_mode = TRUE,
+  flow_animation = FALSE,
+  flow_fade = TRUE,
+  flow_fade_amount = 50,
+  flow_fade_opacity = FALSE,
+  flow_locations = TRUE,
+  flow_location_totals = TRUE,
+  flow_location_labels = FALSE,
+  flow_clustering = TRUE,
+  flow_clustering_auto = TRUE,
+  flow_clustering_level = NULL,
+  flow_clustering_method = "HCA",
+  flow_adaptive_scales = TRUE,
+  flow_highlight_color = "#ff9b29",
+  flow_max_flows = 5000,
+  flow_opacity = 1,
+  flow_outline_width = 0,
+  flow_line_curviness = 0.5,
+  flow_line_thickness_scale = 1,
+  flow_endpoints_in_viewport_mode = c("any", "all"),
+  flow_curved_arrows = FALSE,
+  flow_show_settings = FALSE,
+  flow_dim_basemap = NULL,
+  flow_blend_mode = NULL,
+  visibility = "visible",
+  slot = NULL,
+  min_zoom = NULL,
+  max_zoom = NULL,
+  before_id = NULL,
   popup = NULL,
-  tooltip = NULL
+  tooltip = NULL,
+  hover_options = NULL,
+  filter = NULL
 )
 }
 \arguments{
@@ -53,57 +64,83 @@ add_flowmap(
 \item count: flow magnitude/weight
 }}
 
-\item{color_scheme}{Color scheme for flows. Can be a preset name (e.g., "Teal", "Purple",
+\item{flow_color_scheme}{Color scheme for flows. Can be a preset name (e.g., "Teal", "Purple",
 "Blue") or a vector of color hex codes. Default is "Teal".}
 
-\item{dark_mode}{Whether to use dark mode styling. Default is TRUE.}
+\item{flow_dark_mode}{Whether to use dark mode styling. Default is TRUE.}
 
-\item{animation_enabled}{Whether to animate flow lines. Default is FALSE.}
+\item{flow_animation}{Whether to animate flow lines. Default is FALSE.}
 
-\item{fade_enabled}{Whether to fade flow lines by magnitude. Default is TRUE.}
+\item{flow_fade}{Whether to fade flow lines by magnitude. Default is TRUE.}
 
-\item{fade_amount}{Fade amount (0-100). Default is 50.}
+\item{flow_fade_amount}{Fade amount (0-100). Default is 50.}
 
-\item{fade_opacity_enabled}{Whether fade affects opacity. Default is FALSE.}
+\item{flow_fade_opacity}{Whether fade affects opacity. Default is FALSE.}
 
-\item{locations_enabled}{Whether to show location circles. Default is TRUE.}
+\item{flow_locations}{Whether to show location circles. Default is TRUE.}
 
-\item{location_totals_enabled}{Whether location circles scale by totals. Default is TRUE.}
+\item{flow_location_totals}{Whether location circles scale by totals. Default is TRUE.}
 
-\item{location_labels_enabled}{Whether to show location labels. Default is FALSE.}
+\item{flow_location_labels}{Whether to show location labels. Default is FALSE.}
 
-\item{clustering_enabled}{Whether to enable location clustering. Default is TRUE.}
+\item{flow_clustering}{Whether to enable location clustering. Default is TRUE.}
 
-\item{clustering_auto}{Whether to auto-adjust clustering level. Default is TRUE.}
+\item{flow_clustering_auto}{Whether to auto-adjust clustering level. Default is TRUE.}
 
-\item{clustering_level}{Manual clustering zoom level (0-20). Only used if clustering_auto is FALSE.}
+\item{flow_clustering_level}{Manual clustering zoom level (0-20). Only used if flow_clustering_auto is FALSE.}
 
-\item{adaptive_scales_enabled}{Whether to use adaptive scaling. Default is TRUE.}
+\item{flow_clustering_method}{Clustering algorithm to use. Either "HCA" (Hierarchical Cluster Analysis) or "H3" (H3 hexagonal hierarchical spatial index). Default is "HCA".}
 
-\item{highlight_color}{Color for highlighting on hover. Default is "#ff9b29".}
+\item{flow_adaptive_scales}{Whether to use adaptive scaling. Default is TRUE.}
 
-\item{max_top_flows}{Maximum number of top flows to display. Default is 5000.}
+\item{flow_highlight_color}{Color for highlighting on hover. Default is "#ff9b29".}
 
-\item{opacity}{Overall opacity of the flowmap layer (0-1). Default is 1.0.}
+\item{flow_max_flows}{Maximum number of top flows to display. Default is 5000.}
 
-\item{outline_width}{Width of the flow line outline in pixels. Default is 0.}
+\item{flow_opacity}{Overall opacity of the flowmap layer (0-1). Default is 1.0.}
 
-\item{clustering_method}{Clustering algorithm to use. Either "HCA" (Hierarchical Cluster Analysis) or "H3" (H3 hexagonal hierarchical spatial index). Default is "HCA".}
+\item{flow_outline_width}{Width of the flow line outline in pixels. Default is 0.}
 
-\item{show_settings_menu}{Whether to display an interactive settings menu on the map for real-time customization. Useful for exploring different visual configurations. Default is FALSE.}
+\item{flow_line_curviness}{Curviness of the flow lines (0 to 1). Default is 0.5.}
 
-\item{dim_basemap}{Whether to apply CSS filters to dim the basemap and make the flowmap stand out. In dark mode, applies grayscale, invert, and color adjustments with reduced opacity. In light mode, applies grayscale with reduced opacity. Matches the visual style of flowmap.gl examples. Default is FALSE.}
+\item{flow_line_thickness_scale}{Global multiplier for flow line thickness. Default is 1.0.}
 
-\item{blend_mode}{Blending mode. One of "normal", "screen", or "glow".
+\item{flow_endpoints_in_viewport_mode}{How to handle flows when only one endpoint is in the viewport. Either "any" (show flows if any endpoint is visible) or "all" (show all flows). Default is "any".}
+
+\item{flow_curved_arrows}{Whether to use the new curved arrows layer for flows. Default is FALSE.}
+
+\item{flow_show_settings}{Whether to display an interactive settings menu on the map for real-time customization. Useful for exploring different visual configurations. Default is FALSE.}
+
+\item{flow_dim_basemap}{Whether to apply CSS filters to dim the basemap and make the flowmap stand out. Default is FALSE, matching the upstream flowmap.gl demo.}
+
+\item{flow_blend_mode}{Blending mode. One of "normal", "screen", or "glow". Default is "screen" for standalone flowmaps, matching the upstream flowmap.gl demo, and "normal" for interleaved flowmaps because CSS blending requires a separate canvas.
 \itemize{
 \item "normal": No special blending (default).
-\item "screen": Applies CSS mix-blend-mode to the deck.gl canvas for a screen (dark mode) or darken (light mode) blending effect. This creates a subtle glow where flows overlap.
-\item "glow": Applies WebGL blend functions for a more pronounced glow/accumulation effect. Uses \verb{SRC_ALPHA, ONE_MINUS_DST_COLOR} which works best in dark mode with MapLibre. May have rendering issues in Mapbox.
+\item "screen": Applies CSS \code{mix-blend-mode} to the deck.gl canvas for a screen (dark mode) or darken (light mode) blending effect. Creates a subtle glow where flows overlap. \strong{Only works when \code{before_id = NULL}} because CSS blending requires a separate deck.gl canvas.
+\item "glow": Applies WebGL blend functions (\verb{SRC_ALPHA, ONE_MINUS_DST_COLOR}) for a more pronounced glow/accumulation effect. Works best in dark mode. \strong{Works with both \code{before_id = NULL} and when layer ordering is enabled.}
 }}
+
+\item{visibility}{Whether this layer is displayed.}
+
+\item{slot}{An optional slot for layer order. Recommended for Mapbox Standard style (e.g., "bottom", "middle", "top").}
+
+\item{min_zoom}{The minimum zoom level for the layer (not currently supported for flowmap layers).}
+
+\item{max_zoom}{The maximum zoom level for the layer (not currently supported for flowmap layers).}
+
+\item{before_id}{The ID of a map layer to insert this flowmap "before" (i.e., below). When set, the flowmap will respect the map's layer ordering and appear at the specified position in the layer stack. This uses deck.gl's \code{MapboxOverlay} with \code{interleaved: true} mode.
+
+\strong{Trade-off}: When \code{before_id} is set, CSS blend modes (\code{flow_blend_mode = "screen"}) are disabled because interleaved rendering shares the map's WebGL context. The "glow" WebGL blend mode still works.
+
+When \code{before_id = NULL} (default), the flowmap renders on a separate canvas on top of all map layers, which enables CSS blend modes but ignores layer ordering.}
 
 \item{popup}{A column name from locations or flows to display in a popup on click.}
 
 \item{tooltip}{A column name from locations or flows to display in a tooltip on hover.}
+
+\item{hover_options}{A named list of options for highlighting features in the layer on hover (not currently supported for flowmap layers).}
+
+\item{filter}{An optional filter expression to subset features in the layer (not currently supported for flowmap layers).}
 }
 \value{
 The modified map object with the flowmap layer added.
@@ -142,8 +179,8 @@ maplibre(
     id = "flows",
     locations = locations,
     flows = flows,
-    color_scheme = "Teal",
-    animation_enabled = FALSE
+    flow_color_scheme = "Teal",
+    flow_animation = FALSE
   )
 }
 }

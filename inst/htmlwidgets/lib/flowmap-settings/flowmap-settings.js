@@ -56,7 +56,11 @@
         locationsEnabled: initialSettings.locationsEnabled !== undefined ? initialSettings.locationsEnabled : true,
         locationTotalsEnabled: initialSettings.locationTotalsEnabled !== undefined ? initialSettings.locationTotalsEnabled : true,
         locationLabelsEnabled: initialSettings.locationLabelsEnabled !== undefined ? initialSettings.locationLabelsEnabled : false,
-        maxTopFlowsDisplayNum: (initialSettings.maxTopFlowsDisplayNum !== undefined && initialSettings.maxTopFlowsDisplayNum !== null) ? initialSettings.maxTopFlowsDisplayNum : 5000
+        maxTopFlowsDisplayNum: (initialSettings.maxTopFlowsDisplayNum !== undefined && initialSettings.maxTopFlowsDisplayNum !== null) ? initialSettings.maxTopFlowsDisplayNum : 5000,
+        flowLineCurviness: initialSettings.flowLineCurviness !== undefined ? initialSettings.flowLineCurviness : 0.5,
+        flowLineThicknessScale: initialSettings.flowLineThicknessScale !== undefined ? initialSettings.flowLineThicknessScale : 1.0,
+        flowEndpointsInViewportMode: initialSettings.flowEndpointsInViewportMode || 'all',
+        useCurvedArrows: initialSettings.useCurvedArrows !== undefined ? initialSettings.useCurvedArrows : false
       };
 
       // Add controls
@@ -100,6 +104,12 @@
         .max(10000)
         .step(10)
         .onChange(onSettingsChange);
+
+      const visualFolder = gui.addFolder('Visuals');
+      visualFolder.add(state, 'useCurvedArrows').name('Curved Arrows').onChange(onSettingsChange);
+      visualFolder.add(state, 'flowLineCurviness', 0.0, 1.0).name('Curviness').onChange(onSettingsChange);
+      visualFolder.add(state, 'flowLineThicknessScale', 0.1, 5.0).name('Thickness Scale').onChange(onSettingsChange);
+      visualFolder.add(state, 'flowEndpointsInViewportMode', ['all', 'any']).name('Viewport Culling').onChange(onSettingsChange);
 
       // Fade folder
       const fading = gui.addFolder('Fade');

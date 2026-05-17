@@ -34,14 +34,18 @@
 #' @param flow_max_flows Maximum number of top flows to display. Default is 5000.
 #' @param flow_opacity Overall opacity of the flowmap layer (0-1). Default is 1.0.
 #' @param flow_outline_width Width of the flow line outline in pixels. Default is 0.
+#' @param flow_line_curviness Curviness of the flow lines (0 to 1). Default is 0.5.
+#' @param flow_line_thickness_scale Global multiplier for flow line thickness. Default is 1.0.
+#' @param flow_endpoints_in_viewport_mode How to handle flows when only one endpoint is in the viewport. Either "any" (show flows if any endpoint is visible) or "all" (show all flows). Default is "any".
+#' @param flow_curved_arrows Whether to use the new curved arrows layer for flows. Default is FALSE.
 #' @param flow_show_settings Whether to display an interactive settings menu on the map for real-time customization. Useful for exploring different visual configurations. Default is FALSE.
-#' @param flow_dim_basemap Whether to apply CSS filters to dim the basemap and make the flowmap stand out. In dark mode, applies grayscale, invert, and color adjustments with reduced opacity. In light mode, applies grayscale with reduced opacity. Matches the visual style of flowmap.gl examples. Default is FALSE.
-#' @param flow_blend_mode Blending mode. One of "normal", "screen", or "glow".
+#' @param flow_dim_basemap Whether to apply CSS filters to dim the basemap and make the flowmap stand out. Default is FALSE, matching the upstream flowmap.gl demo.
+#' @param flow_blend_mode Blending mode. One of "normal", "screen", or "glow". Default is "screen" for standalone flowmaps, matching the upstream flowmap.gl demo, and "normal" for interleaved flowmaps because CSS blending requires a separate canvas.
 #'   - "normal": No special blending (default).
 #'   - "screen": Applies CSS `mix-blend-mode` to the deck.gl canvas for a screen (dark mode) or darken (light mode) blending effect. Creates a subtle glow where flows overlap. **Only works when `before_id = NULL`** because CSS blending requires a separate deck.gl canvas.
 #'   - "glow": Applies WebGL blend functions (`SRC_ALPHA, ONE_MINUS_DST_COLOR`) for a more pronounced glow/accumulation effect. Works best in dark mode. **Works with both `before_id = NULL` and when layer ordering is enabled.**
 #' @param visibility Whether this layer is displayed.
-#' @param slot An optional slot for layer order (not currently supported for flowmap layers).
+#' @param slot An optional slot for layer order. Recommended for Mapbox Standard style (e.g., "bottom", "middle", "top").
 #' @param min_zoom The minimum zoom level for the layer (not currently supported for flowmap layers).
 #' @param max_zoom The maximum zoom level for the layer (not currently supported for flowmap layers).
 #' @param before_id The ID of a map layer to insert this flowmap "before" (i.e., below). When set, the flowmap will respect the map's layer ordering and appear at the specified position in the layer stack. This uses deck.gl's `MapboxOverlay` with `interleaved: true` mode.
@@ -112,9 +116,13 @@ add_flowmap <- function(
   flow_max_flows = 5000,
   flow_opacity = 1,
   flow_outline_width = 0,
+  flow_line_curviness = 0.5,
+  flow_line_thickness_scale = 1,
+  flow_endpoints_in_viewport_mode = c("any", "all"),
+  flow_curved_arrows = FALSE,
   flow_show_settings = FALSE,
   flow_dim_basemap = NULL,
-  flow_blend_mode = c("normal", "screen", "glow"),
+  flow_blend_mode = NULL,
   visibility = "visible",
   slot = NULL,
   min_zoom = NULL,
@@ -125,16 +133,20 @@ add_flowmap <- function(
   hover_options = NULL,
   filter = NULL
 ) {
-  flow_blend_mode <- match.arg(flow_blend_mode)
+  # Determine if interleaved mode is needed (for layer ordering)
+  # When before_id or slot is set, we use MapboxOverlay with interleaved: true
+  use_interleaved <- !is.null(before_id) || !is.null(slot)
 
-  # Auto-dim basemap if blending is enabled and user hasn't explicitly set it
-  if (is.null(flow_dim_basemap)) {
-    flow_dim_basemap <- flow_blend_mode != "normal"
+  if (is.null(flow_blend_mode)) {
+    flow_blend_mode <- if (use_interleaved) "normal" else "screen"
+  } else {
+    flow_blend_mode <- match.arg(flow_blend_mode, c("normal", "screen", "glow"))
   }
 
-  # Determine if interleaved mode is needed (for layer ordering)
-  # When before_id is set, we use MapboxOverlay with interleaved: true
-  use_interleaved <- !is.null(before_id)
+  # The upstream demo uses mix-blend-mode without dimming the basemap.
+  if (is.null(flow_dim_basemap)) {
+    flow_dim_basemap <- FALSE
+  }
 
   # Map simplified mode to internal booleans
   css_blend_mode <- flow_blend_mode == "screen"
@@ -154,6 +166,18 @@ add_flowmap <- function(
     warning(
       "flow_blend_mode = 'glow' is intended for use with flow_dark_mode = TRUE. Colors may appear inverted or washed out on light backgrounds."
     )
+  }
+
+  if (
+    use_interleaved &&
+      !is.null(map$x$projection) &&
+      !identical(map$x$projection, "mercator")
+  ) {
+    warning(
+      "Interleaved flowmap layers are not supported with non-Mercator projections. ",
+      "Setting projection = 'mercator' for this map."
+    )
+    map$x$projection <- "mercator"
   }
 
   # Validate inputs
@@ -399,14 +423,20 @@ add_flowmap <- function(
       clusteringLevel = flow_clustering_level,
       adaptiveScalesEnabled = flow_adaptive_scales,
       highlightColor = flow_highlight_color,
-      maxTopFlowsDisplayNum = flow_max_flows
+      maxTopFlowsDisplayNum = flow_max_flows,
+      flowLineCurviness = flow_line_curviness,
+      flowLineThicknessScale = flow_line_thickness_scale,
+      flowEndpointsInViewportMode = match.arg(flow_endpoints_in_viewport_mode),
+      useCurvedArrows = flow_curved_arrows
     ),
+
     showSettingsMenu = flow_show_settings,
     dimBasemap = flow_dim_basemap,
     cssBlendMode = css_blend_mode,
     webglBlendMode = webgl_blend_mode,
     interleaved = use_interleaved,
     beforeId = before_id,
+    slot = slot,
     visibility = visibility,
     minZoom = min_zoom,
     maxZoom = max_zoom,

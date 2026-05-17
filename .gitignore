@@ -3,7 +3,8 @@
 .RData
 .Ruserdata
 .DS_Store
-CLAUDE.md
-.claude
-private
+# CLAUDE.md
+# .claude
+# private
 tmp/
+.vscode

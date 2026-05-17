@@ -1,570 +1,3 @@
-// Attach cluster-click + cursor handlers to a "-clusters" layer.
-// Auto-branches on source capability:
-//   - live-clustered GeoJSON  -> getClusterExpansionZoom
-//   - precomputed vector tiles -> easeTo with zoom + 2
-// Idempotent: handler refs are stored per layer id so remove_layer can
-// tear them down, and re-calling attach on the same layer is a no-op.
-function _mapglAttachClusterHandlers(map, layerId, sourceId) {
-  if (!map._mapglClusterHandlers) map._mapglClusterHandlers = {};
-  if (map._mapglClusterHandlers[layerId]) return;
-
-  const click = (e) => {
-    const features = map.queryRenderedFeatures(e.point, {
-      layers: [layerId],
-    });
-    if (!features.length) return;
-    const feature = features[0];
-    const source = map.getSource(sourceId);
-
-    if (source && typeof source.getClusterExpansionZoom === "function") {
-      // Native live-clustered GeoJSON source.
-      const clusterId = feature.properties.cluster_id;
-      source.getClusterExpansionZoom(clusterId, (err, zoom) => {
-        if (err) return;
-        map.easeTo({ center: feature.geometry.coordinates, zoom });
-      });
-    } else {
-      // Pre-clustered vector tiles: no source-side cluster tree, so
-      // step the zoom up by one. Tiles re-cluster at every level, so
-      // +2 would traverse an intermediate level mid-ease and flash a
-      // second regrouping — +1 gives a clean single break-apart.
-      map.easeTo({
-        center: feature.geometry.coordinates,
-        zoom: Math.min(map.getZoom() + 1, 20),
-      });
-    }
-  };
-  const mouseenter = () => {
-    map.getCanvas().style.cursor = "pointer";
-  };
-  const mouseleave = () => {
-    map.getCanvas().style.cursor = "";
-  };
-
-  map.on("click", layerId, click);
-  map.on("mouseenter", layerId, mouseenter);
-  map.on("mouseleave", layerId, mouseleave);
-  map._mapglClusterHandlers[layerId] = { click, mouseenter, mouseleave };
-}
-
-function _mapglDetachClusterHandlers(map, layerId) {
-  if (!map._mapglClusterHandlers || !map._mapglClusterHandlers[layerId]) return;
-  const h = map._mapglClusterHandlers[layerId];
-  map.off("click", layerId, h.click);
-  map.off("mouseenter", layerId, h.mouseenter);
-  map.off("mouseleave", layerId, h.mouseleave);
-  delete map._mapglClusterHandlers[layerId];
-}
-
-function _mapglPostDrawnFeatures(syncUrl, mapglId, features) {
-  if (!syncUrl || !mapglId || typeof fetch !== "function") return;
-
-  fetch(syncUrl, {
-    method: "POST",
-    body: JSON.stringify(features),
-  }).catch((e) => {
-    if (typeof console !== "undefined" && console.debug) {
-      console.debug("mapgl draw sync failed", e);
-    }
-  });
-}
-
-function _mapglSyncDrawnFeatures(options) {
-  const drawControl = options.drawControl;
-  if (!drawControl) return;
-
-  const drawnFeatures = drawControl.getAll();
-  const widget = options.widget;
-
-  if (HTMLWidgets.shinyMode && typeof Shiny !== "undefined") {
-    Shiny.setInputValue(options.inputId + "_drawn_features", drawnFeatures, {
-      priority: "event",
-    });
-  } else if (options.syncUrl && options.mapglId) {
-    if (options.debounce && widget) {
-      clearTimeout(widget._mapglDrawSyncTimer);
-      widget._mapglDrawSyncTimer = setTimeout(() => {
-        _mapglPostDrawnFeatures(
-          options.syncUrl,
-          options.mapglId,
-          drawnFeatures,
-        );
-      }, 150);
-    } else {
-      _mapglPostDrawnFeatures(options.syncUrl, options.mapglId, drawnFeatures);
-    }
-  }
-
-  if (widget) {
-    widget.drawFeatures = drawnFeatures;
-  }
-}
-
-function _mapglHasDrawAttributes(attributes) {
-  return Array.isArray(attributes) && attributes.length > 0;
-}
-
-function _mapglAttributeDefaultValue(field) {
-  if (Object.prototype.hasOwnProperty.call(field, "default")) {
-    return field.default;
-  }
-  return undefined;
-}
-
-function _mapglEnsureDrawAttributeStyles() {
-  if (document.querySelector("#mapgl-draw-attribute-editor-styles")) return;
-
-  const style = document.createElement("style");
-  style.id = "mapgl-draw-attribute-editor-styles";
-  style.textContent = `
-    .mapgl-draw-attribute-editor {
-      position: absolute;
-      z-index: 2;
-      width: 260px;
-      max-width: calc(100% - 20px);
-      background: #ffffff;
-      border-radius: 4px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.28);
-      color: #222;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      font-size: 12px;
-      display: none;
-      overflow: hidden;
-    }
-    .mapgl-draw-attribute-editor.mapgl-draw-attribute-editor-visible {
-      display: block;
-    }
-    .mapgl-draw-attribute-editor-header {
-      padding: 9px 10px;
-      border-bottom: 1px solid #e2e2e2;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.02em;
-      text-transform: uppercase;
-    }
-    .mapgl-draw-attribute-editor-body {
-      padding: 10px;
-    }
-    .mapgl-draw-attribute-field {
-      margin-bottom: 10px;
-    }
-    .mapgl-draw-attribute-field label {
-      display: block;
-      margin-bottom: 4px;
-      font-weight: 600;
-    }
-    .mapgl-draw-attribute-field input,
-    .mapgl-draw-attribute-field select,
-    .mapgl-draw-attribute-field textarea {
-      box-sizing: border-box;
-      width: 100%;
-      border: 1px solid #cfcfcf;
-      border-radius: 3px;
-      padding: 6px 7px;
-      font: inherit;
-    }
-    .mapgl-draw-attribute-field input[type="checkbox"] {
-      width: auto;
-      margin-right: 6px;
-    }
-    .mapgl-draw-attribute-checkbox-label {
-      display: flex !important;
-      align-items: center;
-      gap: 4px;
-      margin-bottom: 0 !important;
-    }
-    .mapgl-draw-attribute-actions {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      padding-top: 2px;
-    }
-    .mapgl-draw-attribute-save {
-      border: 0;
-      border-radius: 3px;
-      background: #1f2937;
-      color: #fff;
-      cursor: pointer;
-      font: inherit;
-      font-weight: 600;
-      padding: 6px 10px;
-    }
-    .mapgl-draw-attribute-message {
-      color: #666;
-      font-size: 11px;
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-function _mapglEditorPositionStyle(position) {
-  const style = {};
-  const vertical = position && position.indexOf("bottom") !== -1 ? "bottom" : "top";
-  const horizontal = position && position.indexOf("right") !== -1 ? "left" : "right";
-  style[vertical] = "10px";
-  style[horizontal] = "10px";
-  return style;
-}
-
-function _mapglApplyStyle(element, style) {
-  Object.keys(style).forEach((key) => {
-    element.style[key] = style[key];
-  });
-}
-
-function formatDmsCoordinate(value, axis, precision) {
-  const direction =
-    axis === "lng" ? (value < 0 ? "W" : "E") : value < 0 ? "S" : "N";
-  const absolute = Math.abs(value);
-  let degrees = Math.floor(absolute);
-  const minutesFloat = (absolute - degrees) * 60;
-  let minutes = Math.floor(minutesFloat);
-  let seconds = (minutesFloat - minutes) * 60;
-
-  const factor = Math.pow(10, precision);
-  seconds = Math.round(seconds * factor) / factor;
-  if (seconds >= 60) {
-    seconds = 0;
-    minutes += 1;
-  }
-  if (minutes >= 60) {
-    minutes = 0;
-    degrees += 1;
-  }
-
-  const secondsText = seconds
-    .toFixed(precision)
-    .padStart(precision > 0 ? precision + 3 : 2, "0");
-  return `${degrees}\u00b0${String(minutes).padStart(2, "0")}'${secondsText}"${direction}`;
-}
-
-function formatCoordinates(lngLat, format, precision) {
-  if (format === "dms") {
-    return `${formatDmsCoordinate(lngLat.lng, "lng", precision)}, ${formatDmsCoordinate(lngLat.lat, "lat", precision)}`;
-  }
-  return `${lngLat.lng.toFixed(precision)}, ${lngLat.lat.toFixed(precision)}`;
-}
-
-function createCoordinatesControl(options) {
-  const controlOptions = options || {};
-  const format = controlOptions.format || "decimal";
-  const precisionValue = Number(controlOptions.precision);
-  const precision = Number.isFinite(precisionValue)
-    ? Math.min(20, Math.max(0, Math.floor(precisionValue)))
-    : format === "dms" ? 1 : 5;
-  const emptyText = controlOptions.empty_text || "Move cursor over map";
-  const labelText = controlOptions.label || "";
-  const wrapLongitude = controlOptions.wrap !== false;
-
-  const container = document.createElement("div");
-  container.className = "mapgl-coordinates-control mapboxgl-ctrl";
-  container.style.cssText = `
-    background: #ffffff;
-    padding: 8px 10px;
-    border-radius: 4px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
-    color: #222;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    font-size: 12px;
-    line-height: 1.35;
-    min-width: 142px;
-    max-width: 240px;
-    border: 1px solid rgba(0,0,0,0.1);
-    pointer-events: none;
-  `;
-
-  if (labelText) {
-    const label = document.createElement("div");
-    label.className = "mapgl-coordinates-label";
-    label.textContent = labelText;
-    label.style.cssText = `
-      margin-bottom: 2px;
-      color: #666;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-      text-transform: uppercase;
-    `;
-    container.appendChild(label);
-  }
-
-  const value = document.createElement("div");
-  value.className = "mapgl-coordinates-value";
-  value.textContent = emptyText;
-  value.style.cssText = `
-    color: #111;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  `;
-  container.appendChild(value);
-
-  let mapRef = null;
-  const update = (event) => {
-    if (!event || !event.lngLat) return;
-    const lngLat =
-      wrapLongitude && typeof event.lngLat.wrap === "function"
-        ? event.lngLat.wrap()
-        : event.lngLat;
-    value.textContent = formatCoordinates(lngLat, format, precision);
-  };
-  const clear = () => {
-    value.textContent = emptyText;
-  };
-
-  return {
-    onAdd: function (map) {
-      mapRef = map;
-      mapRef.on("mousemove", update);
-      mapRef.getCanvas().addEventListener("mouseleave", clear);
-      return container;
-    },
-    onRemove: function () {
-      if (mapRef) {
-        mapRef.off("mousemove", update);
-        mapRef.getCanvas().removeEventListener("mouseleave", clear);
-      }
-      if (container.parentNode) {
-        container.parentNode.removeChild(container);
-      }
-      mapRef = null;
-    },
-  };
-}
-
-function _mapglCurrentFieldValue(feature, field) {
-  const properties = (feature && feature.properties) || {};
-  if (Object.prototype.hasOwnProperty.call(properties, field.name)) {
-    return properties[field.name];
-  }
-  const defaultValue = _mapglAttributeDefaultValue(field);
-  if (defaultValue !== undefined) {
-    return defaultValue;
-  }
-  return field.type === "checkbox" ? false : "";
-}
-
-function _mapglApplyAttributeDefaults(drawControl, feature, attributes) {
-  const featureId = feature && feature.id;
-  if (!featureId) return;
-
-  const properties = feature.properties || {};
-  attributes.forEach((field) => {
-    if (Object.prototype.hasOwnProperty.call(properties, field.name)) return;
-    const defaultValue = _mapglAttributeDefaultValue(field);
-    if (defaultValue !== undefined) {
-      drawControl.setFeatureProperty(featureId, field.name, defaultValue);
-    }
-  });
-}
-
-function _mapglCreateAttributeInput(field, value) {
-  let input;
-
-  if (field.type === "textarea") {
-    input = document.createElement("textarea");
-    input.rows = 3;
-    input.value = value == null ? "" : value;
-  } else if (field.type === "select") {
-    input = document.createElement("select");
-    const emptyOption = document.createElement("option");
-    emptyOption.value = "";
-    emptyOption.textContent = "";
-    input.appendChild(emptyOption);
-    (field.choices || []).forEach((choice, index) => {
-      const option = document.createElement("option");
-      option.value = String(index);
-      option.textContent = choice.label == null ? String(choice.value) : choice.label;
-      option.dataset.mapglValue = JSON.stringify(choice.value);
-      if (value === choice.value || String(value) === String(choice.value)) {
-        option.selected = true;
-      }
-      input.appendChild(option);
-    });
-  } else if (field.type === "number") {
-    input = document.createElement("input");
-    input.type = "number";
-    input.value = value == null ? "" : value;
-    ["min", "max", "step"].forEach((key) => {
-      if (Object.prototype.hasOwnProperty.call(field, key)) {
-        input.setAttribute(key, field[key]);
-      }
-    });
-  } else if (field.type === "checkbox") {
-    input = document.createElement("input");
-    input.type = "checkbox";
-    input.checked = value === true || value === "true" || value === 1;
-  } else {
-    input = document.createElement("input");
-    input.type = "text";
-    input.value = value == null ? "" : value;
-  }
-
-  if (field.placeholder && field.type !== "select" && field.type !== "checkbox") {
-    input.placeholder = field.placeholder;
-  }
-  if (field.required) {
-    input.required = true;
-  }
-  input.dataset.fieldName = field.name;
-  input.dataset.fieldType = field.type;
-  return input;
-}
-
-function _mapglInputValue(input, field) {
-  if (field.type === "checkbox") {
-    return input.checked;
-  }
-  if (field.type === "number") {
-    return input.value === "" ? null : Number(input.value);
-  }
-  if (field.type === "select") {
-    if (input.value === "") return null;
-    const selected = input.options[input.selectedIndex];
-    return selected && selected.dataset.mapglValue
-      ? JSON.parse(selected.dataset.mapglValue)
-      : input.value;
-  }
-  return input.value;
-}
-
-function initializeDrawAttributeEditor(map, drawControl, options) {
-  const attributes = options.attributes || [];
-  if (!_mapglHasDrawAttributes(attributes)) return null;
-
-  _mapglEnsureDrawAttributeStyles();
-
-  const container = document.createElement("div");
-  container.className = "mapgl-draw-attribute-editor";
-  _mapglApplyStyle(container, _mapglEditorPositionStyle(options.position));
-
-  const header = document.createElement("div");
-  header.className = "mapgl-draw-attribute-editor-header";
-  header.textContent = "Feature attributes";
-
-  const body = document.createElement("form");
-  body.className = "mapgl-draw-attribute-editor-body";
-
-  container.appendChild(header);
-  container.appendChild(body);
-  map.getContainer().appendChild(container);
-
-  let selectedFeatureId = null;
-
-  const hide = () => {
-    selectedFeatureId = null;
-    container.classList.remove("mapgl-draw-attribute-editor-visible");
-    body.innerHTML = "";
-  };
-
-  const show = (feature) => {
-    selectedFeatureId = feature && feature.id;
-    if (!selectedFeatureId) {
-      hide();
-      return;
-    }
-
-    const currentFeature = drawControl.get(selectedFeatureId) || feature;
-    body.innerHTML = "";
-
-    attributes.forEach((field) => {
-      const value = _mapglCurrentFieldValue(currentFeature, field);
-      const wrapper = document.createElement("div");
-      wrapper.className = "mapgl-draw-attribute-field";
-      const input = _mapglCreateAttributeInput(field, value);
-
-      if (field.type === "checkbox") {
-        const label = document.createElement("label");
-        label.className = "mapgl-draw-attribute-checkbox-label";
-        label.appendChild(input);
-        label.appendChild(document.createTextNode(field.label || field.name));
-        wrapper.appendChild(label);
-      } else {
-        const label = document.createElement("label");
-        label.textContent = field.label || field.name;
-        wrapper.appendChild(label);
-        wrapper.appendChild(input);
-      }
-
-      body.appendChild(wrapper);
-    });
-
-    const actions = document.createElement("div");
-    actions.className = "mapgl-draw-attribute-actions";
-
-    const save = document.createElement("button");
-    save.type = "submit";
-    save.className = "mapgl-draw-attribute-save";
-    save.textContent = "Save";
-
-    const message = document.createElement("span");
-    message.className = "mapgl-draw-attribute-message";
-
-    actions.appendChild(save);
-    actions.appendChild(message);
-    body.appendChild(actions);
-    container.classList.add("mapgl-draw-attribute-editor-visible");
-  };
-
-  body.addEventListener("submit", (e) => {
-    e.preventDefault();
-    if (!selectedFeatureId) return;
-    if (typeof body.reportValidity === "function" && !body.reportValidity()) {
-      return;
-    }
-
-    attributes.forEach((field) => {
-      const input = Array.from(
-        body.querySelectorAll("[data-field-name]"),
-      ).find((element) => element.dataset.fieldName === field.name);
-      if (!input) return;
-      drawControl.setFeatureProperty(
-        selectedFeatureId,
-        field.name,
-        _mapglInputValue(input, field),
-      );
-    });
-
-    const message = body.querySelector(".mapgl-draw-attribute-message");
-    if (message) {
-      message.textContent = "Saved";
-      setTimeout(() => {
-        message.textContent = "";
-      }, 1200);
-    }
-
-    if (typeof options.onChange === "function") {
-      options.onChange(false);
-    }
-  });
-
-  map.on("draw.create", (e) => {
-    if (e.features) {
-      e.features.forEach((feature) => {
-        _mapglApplyAttributeDefaults(drawControl, feature, attributes);
-      });
-    }
-    if (e.features && e.features.length === 1) {
-      show(e.features[0]);
-    }
-  });
-
-  map.on("draw.selectionchange", (e) => {
-    if (e.features && e.features.length === 1) {
-      show(e.features[0]);
-    } else {
-      hide();
-    }
-  });
-
-  map.on("draw.delete", hide);
-
-  return {
-    hide: hide,
-    show: show,
-  };
-}
-
 // Measurement functionality
 function createMeasurementBox(map) {
   const box = document.createElement("div");
@@ -1290,229 +723,6 @@ function generateDrawStyles(styling) {
   ];
 }
 
-function addBezierDrawStyles(styles, styling) {
-  const activeColor = styling && styling.active_color ? styling.active_color : "#fbb03b";
-  const baseStyles = styles || (MapboxDraw.lib && MapboxDraw.lib.theme) || [];
-  const bezierStyles = [
-    {
-      id: "gl-draw-bezier-handle-line-active",
-      type: "line",
-      filter: [
-        "all",
-        ["==", "$type", "LineString"],
-        ["==", "meta2", "handle-line"],
-      ],
-      layout: {
-        "line-cap": "round",
-        "line-join": "round",
-      },
-      paint: {
-        "line-color": activeColor,
-        "line-width": 1,
-      },
-    },
-    {
-      id: "gl-draw-bezier-handle-stroke-inactive",
-      type: "circle",
-      filter: [
-        "all",
-        ["==", "meta", "vertex"],
-        ["==", "meta2", "handle"],
-        ["==", "$type", "Point"],
-        ["!=", "mode", "static"],
-      ],
-      paint: {
-        "circle-radius": 5,
-        "circle-color": "#fff",
-      },
-    },
-    {
-      id: "gl-draw-bezier-handle-inactive",
-      type: "circle",
-      filter: [
-        "all",
-        ["==", "meta", "vertex"],
-        ["==", "meta2", "handle"],
-        ["==", "$type", "Point"],
-        ["!=", "mode", "static"],
-      ],
-      paint: {
-        "circle-radius": 4,
-        "circle-color": activeColor,
-      },
-    },
-  ];
-
-  return baseStyles.concat(bezierStyles);
-}
-
-function enableBezierDrawMode(drawOptions, styling) {
-  if (!window.MapglBezierDraw) {
-    console.warn("Bezier draw mode dependency is not available.");
-    return drawOptions;
-  }
-
-  drawOptions.modes = Object.assign({}, drawOptions.modes || MapboxDraw.modes, {
-    simple_select: window.MapglBezierDraw.SimpleSelectModeBezierOverride,
-    direct_select: window.MapglBezierDraw.DirectModeBezierOverride,
-    draw_bezier_curve: wrapBezierToolbarMode(
-      window.MapglBezierDraw.DrawBezierCurve,
-    ),
-  });
-  drawOptions.userProperties = true;
-  drawOptions.styles = addBezierDrawStyles(drawOptions.styles, styling);
-
-  return drawOptions;
-}
-
-function wrapBezierToolbarMode(mode) {
-  if (!mode || typeof mode.onSetup !== "function") return mode;
-
-  const wrappedMode = Object.assign({}, mode);
-  const originalOnSetup = mode.onSetup;
-  wrappedMode.onSetup = function (options) {
-    const activateUIButton = this.activateUIButton;
-    this.activateUIButton = function () {};
-
-    try {
-      return originalOnSetup.call(this, options);
-    } finally {
-      this.activateUIButton = activateUIButton;
-    }
-  };
-
-  return wrappedMode;
-}
-
-function addBezierButtonStyles() {
-  if (document.querySelector("#mapgl-bezier-styles")) return;
-
-  const style = document.createElement("style");
-  style.id = "mapgl-bezier-styles";
-  style.textContent = `
-    .mapbox-gl-draw_bezier {
-      background: transparent;
-      background-image: url('data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"%3E%3Cpath d="M3 15 C7 3, 13 17, 17 5" fill="none" stroke="%23000000" stroke-width="2" stroke-linecap="round"/%3E%3Ccircle cx="3" cy="15" r="1.5" fill="%23000000"/%3E%3Ccircle cx="17" cy="5" r="1.5" fill="%23000000"/%3E%3C/svg%3E') !important;
-      background-repeat: no-repeat !important;
-      background-position: center !important;
-    }
-    .mapbox-gl-draw_bezier_polygon {
-      background: transparent;
-      background-image: url('data:image/svg+xml;utf8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"%3E%3Cpath d="M4 14 C5 4, 15 4, 16 14 C12 17, 8 17, 4 14 Z" fill="none" stroke="%23000000" stroke-width="2" stroke-linejoin="round"/%3E%3C/svg%3E') !important;
-      background-repeat: no-repeat !important;
-      background-position: center !important;
-    }
-    .mapbox-gl-draw_bezier:hover,
-    .mapbox-gl-draw_bezier_polygon:hover,
-    .mapbox-gl-draw_bezier.active,
-    .mapbox-gl-draw_bezier_polygon.active {
-      background-color: rgba(0, 0, 0, 0.05);
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-function setActiveBezierButton(drawControlGroup, className) {
-  if (!drawControlGroup || !className) return;
-
-  drawControlGroup
-    .querySelectorAll(".active")
-    .forEach((btn) => btn.classList.remove("active"));
-
-  const button = drawControlGroup.querySelector("." + className);
-  if (button) button.classList.add("active");
-}
-
-function clearActiveBezierButton(drawControlGroup) {
-  if (!drawControlGroup) return;
-
-  drawControlGroup._mapglActiveBezierButton = null;
-  drawControlGroup
-    .querySelectorAll(
-      ".mapbox-gl-draw_bezier.active, .mapbox-gl-draw_bezier_polygon.active",
-    )
-    .forEach((btn) => btn.classList.remove("active"));
-}
-
-function addBezierButtons(map, drawControl, options) {
-  if (!drawControl || !(options.bezier || options.bezierPolygon)) return;
-
-  addBezierButtonStyles();
-
-  setTimeout(() => {
-    const drawControlGroup = map
-      .getContainer()
-      .querySelector(options.controlGroupSelector);
-    if (!drawControlGroup) return;
-
-    const trashBtn = drawControlGroup.querySelector(".mapbox-gl-draw_trash");
-    const iconClass = options.iconClass || "";
-
-    if (!drawControlGroup._mapglBezierNativeClickHandler) {
-      drawControlGroup._mapglBezierNativeClickHandler = (e) => {
-        if (
-          e.target.closest(
-            ".mapbox-gl-draw_bezier, .mapbox-gl-draw_bezier_polygon",
-          )
-        ) {
-          return;
-        }
-        clearActiveBezierButton(drawControlGroup);
-      };
-      drawControlGroup.addEventListener(
-        "click",
-        drawControlGroup._mapglBezierNativeClickHandler,
-        true,
-      );
-    }
-
-    const addButton = (className, title, modeOptions) => {
-      if (drawControlGroup.querySelector("." + className)) return;
-
-      const button = document.createElement("button");
-      button.className = `${className} ${iconClass}`.trim();
-      button.title = title;
-      button.type = "button";
-      button.addEventListener("click", () => {
-        drawControlGroup._mapglActiveBezierButton = className;
-        drawControl.changeMode("draw_bezier_curve", modeOptions || {});
-        setActiveBezierButton(drawControlGroup, className);
-        requestAnimationFrame(() => {
-          if (drawControlGroup._mapglActiveBezierButton === className) {
-            setActiveBezierButton(drawControlGroup, className);
-          }
-        });
-      });
-
-      if (trashBtn) {
-        drawControlGroup.insertBefore(button, trashBtn);
-      } else {
-        drawControlGroup.appendChild(button);
-      }
-    };
-
-    if (options.bezier) {
-      addButton("mapbox-gl-draw_bezier", "Bezier curve tool", {});
-    }
-    if (options.bezierPolygon) {
-      addButton("mapbox-gl-draw_bezier_polygon", "Bezier polygon tool", {
-        isPolygon: true,
-      });
-    }
-
-    map.on("draw.modechange", (e) => {
-      if (e && e.mode === "draw_bezier_curve") {
-        setActiveBezierButton(
-          drawControlGroup,
-          drawControlGroup._mapglActiveBezierButton,
-        );
-      } else {
-        clearActiveBezierButton(drawControlGroup);
-      }
-    });
-  }, 100);
-}
-
 // Helper function to add features from a source to draw
 function addSourceFeaturesToDraw(draw, sourceId, map) {
   const mapId = map.getContainer().id;
@@ -1625,7 +835,137 @@ function reAddUserImagesMapbox(map, mapId) {
   }
 }
 
-// Screenshot functions are now in screenshot.js (shared module)
+// Screenshot capture functionality
+async function captureMapScreenshot(map, options) {
+  const container = map.getContainer();
+  const hiddenElements = [];
+
+  // Hide controls (nav, fullscreen, screenshot, etc.) but keep legends/attribution based on options
+  if (options.hide_controls) {
+    container.querySelectorAll('.maplibregl-ctrl-group, .mapboxgl-ctrl-group').forEach(el => {
+      // Skip scale bar if include_scale_bar is true
+      if (options.include_scale_bar && el.querySelector('.maplibregl-ctrl-scale, .mapboxgl-ctrl-scale')) {
+        return;
+      }
+      hiddenElements.push({ element: el, display: el.style.display });
+      el.style.display = 'none';
+    });
+    // Also hide layers control and measurement box
+    container.querySelectorAll('.layers-control, .mapgl-measurement-box').forEach(el => {
+      hiddenElements.push({ element: el, display: el.style.display });
+      el.style.display = 'none';
+    });
+  }
+
+  // Hide legends if requested
+  if (!options.include_legend) {
+    container.querySelectorAll('.mapboxgl-legend').forEach(el => {
+      hiddenElements.push({ element: el, display: el.style.display });
+      el.style.display = 'none';
+    });
+  }
+
+  // Attribution is always included to comply with map provider TOS
+
+  try {
+    // Wait for map to be idle
+    if (!map.loaded()) {
+      await new Promise(resolve => map.once('idle', resolve));
+    }
+
+    // Force render and capture
+    map.triggerRepaint();
+    await new Promise(resolve => map.once('render', resolve));
+
+    const canvas = await html2canvas(container, {
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: null,
+      logging: false,
+      scale: options.image_scale || 1,
+      onclone: function(clonedDoc, clonedElement) {
+        // Copy WebGL canvas content to cloned canvas
+        const originalCanvas = container.querySelector('canvas.maplibregl-canvas, canvas.mapboxgl-canvas');
+        const clonedCanvas = clonedElement.querySelector('canvas.maplibregl-canvas, canvas.mapboxgl-canvas');
+        if (originalCanvas && clonedCanvas) {
+          const ctx = clonedCanvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(originalCanvas, 0, 0);
+          }
+        }
+      }
+    });
+
+    // Restore hidden elements
+    hiddenElements.forEach(item => item.element.style.display = item.display);
+    return canvas;
+
+  } catch (error) {
+    // Restore hidden elements even on error
+    hiddenElements.forEach(item => item.element.style.display = item.display);
+    throw error;
+  }
+}
+
+function downloadScreenshot(canvas, filename) {
+  const link = document.createElement('a');
+  link.download = `${filename}.png`;
+  link.href = canvas.toDataURL('image/png');
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function createScreenshotControl(map, options, isMaplibre = true) {
+  const ctrlPrefix = isMaplibre ? 'maplibregl' : 'mapboxgl';
+
+  const btn = document.createElement("button");
+  btn.className = `${ctrlPrefix}-ctrl-icon ${ctrlPrefix}-ctrl-screenshot`;
+  btn.type = "button";
+  btn.title = options.button_title || "Capture screenshot";
+  btn.setAttribute("aria-label", options.button_title || "Capture screenshot");
+  btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
+  btn.style.cssText = "display:flex;justify-content:center;align-items:center;cursor:pointer;";
+
+  const container = document.createElement("div");
+  container.className = `${ctrlPrefix}-ctrl ${ctrlPrefix}-ctrl-group`;
+  container.appendChild(btn);
+
+  let capturing = false;
+  btn.onclick = async () => {
+    if (capturing) return;
+    capturing = true;
+    btn.style.opacity = "0.5";
+    btn.style.cursor = "wait";
+
+    try {
+      const canvas = await captureMapScreenshot(map, {
+        include_legend: options.include_legend !== false,
+        hide_controls: options.hide_controls !== false,
+        include_scale_bar: options.include_scale_bar !== false,
+        image_scale: options.image_scale || 1
+      });
+      downloadScreenshot(canvas, options.filename || "map-screenshot");
+    } catch (e) {
+      console.error("Screenshot capture failed:", e);
+    }
+
+    btn.style.opacity = "1";
+    btn.style.cursor = "pointer";
+    capturing = false;
+  };
+
+  const controlObj = {
+    onAdd: () => container,
+    onRemove: () => {
+      if (container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
+    }
+  };
+
+  return controlObj;
+}
 
 HTMLWidgets.widget({
   name: "mapboxgl",
@@ -1638,65 +978,9 @@ HTMLWidgets.widget({
 
     return {
       renderValue: function (x) {
-        // 1. Inject global        // INJECT CSS FOR BLENDING FLOWMAPS
-        if (!document.getElementById('flowmap-css-fix')) {
-          const style = document.createElement('style');
-          style.id = 'flowmap-css-fix';
-          style.innerHTML = `
-            /* Ensure container doesn't isolate blending */
-            .flowmap-dark-mode, .flowmap-light-mode {
-              isolation: auto !important;
-            }
-            
-            /* Blend mode is now applied dynamically via JavaScript updateDeckEffects()
-               to allow runtime changes via settings menu. */
-
-            /* Dimming is now handled via native fill layers (not CSS filters)
-               to avoid affecting the flowmap when using interleaved rendering mode. */
-
-            /* Tooltip styling from flowmap.gl example */
-            .flowmap-tooltip {
-              position: absolute;
-              font-size: 10px;
-              border-radius: 5px;
-              background-color: rgba(150, 150, 150, 0.75);
-              padding: 1em;
-              color: white;
-              pointer-events: none;
-              z-index: 9999;
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-            }
-          `;
-          document.head.appendChild(style);
-        }
-
         if (typeof mapboxgl === "undefined") {
           console.error("Mapbox GL JS is not loaded.");
           return;
-        }
-
-        // Clean up existing map if present to prevent control stacking on re-render
-        if (map) {
-          // Remove all controls from the old map
-          if (map.controls && map.controls.length > 0) {
-            map.controls.forEach(function (controlObj) {
-              try {
-                if (controlObj.control) {
-                  map.removeControl(controlObj.control);
-                }
-              } catch (e) {
-                // Control may already be removed
-              }
-            });
-          }
-          // Remove the old map
-          try {
-            map.remove();
-          } catch (e) {
-            // Map may already be removed
-          }
-          map = null;
         }
 
         // Register PMTiles source type if available
@@ -1733,13 +1017,6 @@ HTMLWidgets.widget({
         map._initialStyleLoaded = false;
 
         map.on("style.load", function () {
-          // Store basemap layer IDs before user layers are added
-          if (!map._basemapLayerIds) {
-            map._basemapLayerIds = new Set(
-              map.getStyle().layers.map(l => l.id)
-            );
-          }
-
           map.resize();
 
           if (HTMLWidgets.shinyMode) {
@@ -1939,6 +1216,26 @@ HTMLWidgets.widget({
           // Add layers if provided
           if (x.layers) {
             x.layers.forEach(function (layer) {
+              // Skip custom layer types that are handled by plugins (like flowmap)
+              const nativeLayerTypes = [
+                "fill",
+                "line",
+                "symbol",
+                "circle",
+                "heatmap",
+                "fill-extrusion",
+                "raster",
+                "raster-particle",
+                "hillshade",
+                "model",
+                "background",
+                "sky",
+                "slot",
+                "clip",
+              ];
+              if (!nativeLayerTypes.includes(layer.type)) {
+                return;
+              }
               try {
                 const layerConfig = {
                   id: layer.id,
@@ -2155,600 +1452,6 @@ HTMLWidgets.widget({
             });
           }
 
-
-          // Initialize flowmap layers if provided
-          if (x.flowmaps && x.flowmaps.length > 0) {
-            // Check if FlowmapGL is available
-            if (typeof FlowmapGL === "undefined") {
-              console.error("FlowmapGL library is not loaded. Cannot add flowmap layers.");
-            } else {
-              // Store GUI instances
-              if (!map._flowmapGUIs) {
-                map._flowmapGUIs = {};
-              }
-
-              // Initialize STANDALONE deck.gl (NOT MapboxOverlay) for proper CSS blend mode support
-              // This matches the official flowmap.gl example architecture
-              if (!map._deckgl) {
-                try {
-                  const { Deck } = FlowmapGL;
-                  const container = map.getContainer();
-
-                  // Create a container div for deck.gl canvas
-                  const deckContainer = document.createElement('div');
-                  deckContainer.id = 'deck-container';
-                  deckContainer.style.cssText = `
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    pointer-events: none;
-                    z-index: 1;
-                  `;
-                  container.appendChild(deckContainer);
-
-                  // Store reference for blend mode updates
-                  map._deckContainer = deckContainer;
-
-                  // Get initial viewstate from map
-                  const center = map.getCenter();
-                  const initialViewState = {
-                    longitude: center.lng,
-                    latitude: center.lat,
-                    zoom: map.getZoom(),
-                    pitch: map.getPitch(),
-                    bearing: map.getBearing()
-                  };
-
-                  // Create standalone Deck instance
-                  map._deckgl = new Deck({
-                    parent: deckContainer,
-                    controller: false, // Map controls the viewstate
-                    initialViewState: initialViewState,
-                    layers: [],
-                    getTooltip: null,
-                    pickingRadius: 5,
-                    // Ensure transparent background
-                    parameters: {
-                      clearColor: [0, 0, 0, 0]
-                    },
-                    onWebGLInitialized: (gl) => {
-                      // Ensure transparent canvas
-                      gl.enable(gl.BLEND);
-                      console.log('[MapGL Deck.gl] WebGL initialized with transparent canvas');
-                    }
-                  });
-
-                  // Sync viewstate when map moves
-                  // Sync viewstate when map moves
-                  const syncViewState = () => {
-                    const center = map.getCenter();
-                    map._deckgl.setProps({
-                      viewState: {
-                        longitude: center.lng,
-                        latitude: center.lat,
-                        zoom: map.getZoom(),
-                        pitch: map.getPitch(),
-                        bearing: map.getBearing()
-                      }
-                    });
-                  };
-
-                  map.on('move', syncViewState);
-                  map.on('moveend', syncViewState);
-
-                  // Forward mouse move to deck.gl for picking/tooltips
-                  // (Required because deck container has pointer-events: none)
-                  const onMapMouseMove = (e) => {
-                    if (!map._deckgl) return;
-                    const { x, y } = e.point;
-                    const info = map._deckgl.pickObject({ x, y, radius: 2 });
-
-                    map.getCanvas().style.cursor = info ? 'pointer' : '';
-
-                    if (info && info.layer && info.layer.props.onHover) {
-                      info.layer.props.onHover(info);
-                    } else {
-                      // Hide all tooltips
-                      const tooltips = document.querySelectorAll('.flowmap-tooltip');
-                      tooltips.forEach(t => { t.style.display = 'none'; });
-                    }
-                  };
-
-                  // Add listener only once
-                  if (!map._hasDeckMoveListener) {
-                    map.on('mousemove', onMapMouseMove);
-                    map.on('mouseout', () => {
-                      const tooltips = document.querySelectorAll('.flowmap-tooltip');
-                      tooltips.forEach(t => { t.style.display = 'none'; });
-                    });
-                    map._hasDeckMoveListener = true;
-                  }
-
-                  console.log('[MapGL] Standalone Deck.gl initialized for CSS blend mode support');
-
-                  // Cleanup function for when map is destroyed
-                  map.on('remove', function () {
-                    if (map._flowmapGUIs) {
-                      Object.values(map._flowmapGUIs).forEach(function (guiInstance) {
-                        if (typeof FlowmapSettings !== 'undefined') {
-                          FlowmapSettings.destroyGUI(guiInstance);
-                        }
-                      });
-                      map._flowmapGUIs = {};
-                    }
-                    if (map._deckgl) {
-                      map._deckgl.finalize();
-                      map._deckgl = null;
-                    }
-                    if (map._deckContainer) {
-                      map._deckContainer.remove();
-                      map._deckContainer = null;
-                    }
-                  });
-                } catch (error) {
-                  console.error('Failed to initialize standalone Deck.gl:', error);
-                  return;
-                }
-              }
-
-              // Collect all flowmap layers
-              const flowmapLayers = [];
-
-              x.flowmaps.forEach(function (flowmapConfig) {
-                try {
-                  const { FlowmapLayer } = FlowmapGL;
-
-                  // Transform columnar data from R to row-oriented arrays for flowmap.gl
-                  // R sends data as: {"id": ["A","B"], "lat": [10, 20]}
-                  // flowmap.gl expects: [{"id":"A","lat":10}, {"id":"B","lat":20}]
-                  let locations = flowmapConfig.data.locations;
-                  if (locations && !Array.isArray(locations) && typeof locations === 'object') {
-                    locations = HTMLWidgets.dataframeToD3(locations);
-                  }
-
-                  let flows = flowmapConfig.data.flows;
-                  if (flows && !Array.isArray(flows) && typeof flows === 'object') {
-                    flows = HTMLWidgets.dataframeToD3(flows);
-                  }
-
-                  // Update config with transformed data
-                  flowmapConfig.data.locations = locations;
-                  flowmapConfig.data.flows = flows;
-
-                  // WebGL constants for blend mode
-                  const GL = {
-                    SRC_ALPHA: 770,
-                    ONE_MINUS_SRC_ALPHA: 771,
-                    ONE_MINUS_DST_COLOR: 775,
-                    ONE: 1, // Additive blending constant
-                    FUNC_ADD: 32774
-                  };
-
-                  // Common props function
-                  const getLayerProps = (settings) => {
-                    // Determine basic opacity
-                    let opacity = settings.opacity !== undefined ? settings.opacity : 1.0;
-
-                    // Choose blend function based on webglBlendMode setting
-                    let blendFunc;
-                    if (settings.webglBlendMode) {
-                      // Use "hacky" blend mode for "glow" effect as per user request
-                      // ONE_MINUS_DST_COLOR (775) creates the specific glow/accumulation effect
-                      blendFunc = [GL.SRC_ALPHA, GL.ONE_MINUS_DST_COLOR];
-                    } else {
-                      // Standard alpha blending
-                      blendFunc = [GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA];
-                    }
-
-                    return {
-                      id: flowmapConfig.id,
-                      data: flowmapConfig.data,
-                      pickable: true,
-                      visible: flowmapConfig.visibility !== 'none',
-                      opacity: opacity,
-                      outlineWidth: settings.outlineWidth !== undefined ? settings.outlineWidth : 0,
-                      // WebGL blend parameters
-                      parameters: {
-                        blend: true,
-                        blendFunc: blendFunc,
-                        blendEquation: GL.FUNC_ADD,
-                        depthTest: false
-                      },
-                      // Data accessors
-                      getLocationId: (loc) => loc.id,
-                      getLocationLat: (loc) => loc.lat,
-                      getLocationLon: (loc) => loc.lon,
-                      getLocationName: (loc) => loc.name,
-                      getFlowOriginId: (flow) => flow.origin,
-                      getFlowDestId: (flow) => flow.dest,
-                      getFlowMagnitude: (flow) => flow.count,
-                      // Settings
-                      colorScheme: settings.colorScheme,
-                      darkMode: settings.darkMode,
-                      animationEnabled: settings.animationEnabled,
-                      fadeEnabled: settings.fadeEnabled,
-                      fadeAmount: settings.fadeAmount,
-                      fadeOpacityEnabled: settings.fadeOpacityEnabled,
-                      locationsEnabled: settings.locationsEnabled,
-                      locationTotalsEnabled: settings.locationTotalsEnabled,
-                      locationLabelsEnabled: settings.locationLabelsEnabled,
-                      clusteringEnabled: settings.clusteringEnabled,
-                      clusteringAuto: settings.clusteringAuto,
-                      clusteringLevel: settings.clusteringLevel,
-                      clusteringMethod: settings.clusteringMethod,
-                      adaptiveScalesEnabled: settings.adaptiveScalesEnabled,
-                      highlightColor: settings.highlightColor,
-                      maxTopFlowsDisplayNum: settings.maxTopFlowsDisplayNum,
-                      // Event handlers
-                      onHover: (info) => {
-                        // Create or get tooltip element
-                        let tooltip = document.getElementById('flowmap-tooltip-' + flowmapConfig.id);
-
-                        if (!info || !info.object) {
-                          // Hide tooltip
-                          if (tooltip) {
-                            tooltip.style.display = 'none';
-                          }
-                          return;
-                        }
-
-                        // Create tooltip if it doesn't exist
-                        if (!tooltip) {
-                          tooltip = document.createElement('div');
-                          tooltip.id = 'flowmap-tooltip-' + flowmapConfig.id;
-                          tooltip.className = 'flowmap-tooltip';
-                          document.body.appendChild(tooltip);
-                        }
-
-                        // Show and position tooltip
-                        tooltip.style.display = 'block';
-                        tooltip.style.left = info.x + 'px';
-                        tooltip.style.top = info.y + 'px';
-
-                        // Generate tooltip content based on object type
-                        let content = '';
-
-                        // Use string comparison for type checking instead of PickingType enum
-                        switch (info.object.type) {
-                          case 'location':
-                            content = `
-                            <div><strong>${info.object.name || info.object.id}</strong></div>
-                            ${info.object.totals ? `
-                              <div>Incoming: ${info.object.totals.incomingCount || 0}</div>
-                              <div>Outgoing: ${info.object.totals.outgoingCount || 0}</div>
-                              <div>Internal: ${info.object.totals.internalCount || 0}</div>
-                            ` : ''}
-                          `;
-                            break;
-                          case 'flow':
-                            content = `
-                            <div><strong>${info.object.origin.id} → ${info.object.dest.id}</strong></div>
-                            <div>Count: ${info.object.count}</div>
-                          `;
-                            break;
-                          default:
-                            content = '<div>Unknown</div>';
-                        }
-
-                        tooltip.innerHTML = content;
-                      },
-                      onClick: (info) => {
-                        if (flowmapConfig.popup && info && info.object) {
-                          // TODO: Implement popup display
-                          console.log("Flowmap click:", info.object);
-                        }
-                        // Send to Shiny if in Shiny mode
-                        if (HTMLWidgets.shinyMode && info && info.object) {
-                          Shiny.setInputValue(el.id + "_flowmap_click", {
-                            id: flowmapConfig.id,
-                            type: info.object.type,
-                            data: info.object
-                          });
-                        }
-                      }
-                    };
-                  };
-
-                  // Create merged settings object for initial layer creation
-                  const initialSettings = {
-                    ...flowmapConfig.settings,
-                    dimBasemap: flowmapConfig.dimBasemap,
-                    cssBlendMode: flowmapConfig.cssBlendMode,
-                    webglBlendMode: flowmapConfig.webglBlendMode
-                  };
-
-                  // Create FlowmapLayer instance
-                  const flowmapLayer = new FlowmapLayer(getLayerProps(initialSettings));
-
-                  flowmapLayers.push(flowmapLayer);
-                  console.log("Flowmap layer '" + flowmapConfig.id + "' created successfully");
-
-                  /*
-                   * Helper to update container styling, basemap effects, and CSS blend modes
-                   * With interleaved: false, deck.gl renders to a SEPARATE canvas, so CSS mix-blend-mode works!
-                   * This matches the official flowmap.gl example: https://visgl.github.io/flowmap.gl/
-                   */
-                  /*
-                   * Helper to update container styling, basemap effects, and CSS blend modes
-                   * With standalone Deck.gl, we have full control over the canvas and container
-                   */
-                  const updateDeckEffects = (darkMode) => {
-                    // Apply CSS mix-blend-mode to deck.gl canvas
-                    // ONLY use blend mode if cssBlendMode is ON, otherwise fallback to normal for visibility
-                    const useBlending = flowmapConfig.cssBlendMode;
-                    const bgMode = useBlending ? (darkMode ? 'screen' : 'darken') : 'normal';
-
-                    // ROBUSTNESS FIX: explicitly search for canvas elements as per 'blend-mode-canvas-fix.md'
-                    // This ensures we catch the actual DeckGL canvas even if the wrapper structure is complex.
-
-                    let deckCanvas = null;
-                    let deckContainer = map._deckContainer; // Start with known container if available
-
-                    // Find all potential canvases
-                    const allCanvases = map.getContainer().querySelectorAll('canvas');
-
-                    for (let i = 0; i < allCanvases.length; i++) {
-                      const cvs = allCanvases[i];
-                      const isMapbox = cvs.classList.contains('mapboxgl-canvas');
-
-                      // If it's not the base map canvas, and has size, it's likely our deck canvas
-                      // (DeckGL doesn't always add a specific class, but it's the "other" canvas)
-                      if (!isMapbox && cvs.width > 10 && cvs.height > 10) {
-                        deckCanvas = cvs;
-                        if (!deckContainer) deckContainer = cvs.parentElement;
-                        break; // Assume the first non-map canvas is deck
-                      }
-                    }
-
-                    if (deckCanvas) {
-                      deckCanvas.style.setProperty('mix-blend-mode', bgMode, 'important');
-                      deckCanvas.style.setProperty('background', 'transparent', 'important');
-                    }
-
-                    if (deckContainer) {
-                      deckContainer.style.setProperty('mix-blend-mode', bgMode, 'important');
-                    }
-
-                    const container = map.getContainer();
-                    const mapCanvas = map.getCanvas();
-
-                    // Update Container Background (provides the base color when map opacity is reduced)
-                    if (darkMode) {
-                      container.classList.add('flowmap-dark-mode');
-                      container.classList.remove('flowmap-light-mode');
-                      container.style.backgroundColor = '#000';
-                    } else {
-                      container.classList.add('flowmap-light-mode');
-                      container.classList.remove('flowmap-dark-mode');
-                      container.style.backgroundColor = '#fff';
-                    }
-
-                    // Handle Basemap Dimming via CSS Filters (matches flowmap.gl reference)
-                    // If dimBasemap is OFF, reset filters
-                    if (flowmapConfig.dimBasemap) {
-                      if (darkMode) {
-                        // Dark Mode Filters (from reference)
-                        mapCanvas.style.filter = 'grayscale(0.1) invert(1) hue-rotate(-180deg) saturate(0.5) contrast(0.9)';
-                        mapCanvas.style.opacity = '0.3';
-                      } else {
-                        // Light Mode Filters (from reference)
-                        mapCanvas.style.filter = 'grayscale(0.85)';
-                        mapCanvas.style.opacity = '0.5';
-                      }
-                    } else {
-                      mapCanvas.style.filter = '';
-                      mapCanvas.style.opacity = '';
-                    }
-
-                    // Cleanup old dimmer layer if it exists (migration cleanup)
-                    const DIMMER_LAYER_ID = 'flowmap-dimmer-layer';
-                    const DIMMER_SOURCE_ID = 'flowmap-dimmer-source';
-                    if (map.getLayer(DIMMER_LAYER_ID)) map.removeLayer(DIMMER_LAYER_ID);
-                    if (map.getSource(DIMMER_SOURCE_ID)) map.removeSource(DIMMER_SOURCE_ID);
-                  };
-
-                  // Initial call
-                  updateDeckEffects(flowmapConfig.settings.darkMode);
-
-                  // Create settings menu if requested
-                  if (flowmapConfig.showSettingsMenu && typeof FlowmapSettings !== 'undefined') {
-                    // Destroy existing GUI if any
-                    if (map._flowmapGUIs[flowmapConfig.id]) {
-                      FlowmapSettings.destroyGUI(map._flowmapGUIs[flowmapConfig.id]);
-                    }
-
-                    // Track previous state and version counter for smart updates
-                    let previousState = {
-                      ...flowmapConfig.settings,
-                      cssBlendMode: flowmapConfig.cssBlendMode,
-                      webglBlendMode: flowmapConfig.webglBlendMode
-                    };
-                    let layerVersion = 0;
-
-                    let guiInstance;
-                    guiInstance = FlowmapSettings.createGUI(
-                      {
-                        ...flowmapConfig.settings,
-                        dimBasemap: flowmapConfig.dimBasemap,
-                        cssBlendMode: flowmapConfig.cssBlendMode,
-                        webglBlendMode: flowmapConfig.webglBlendMode
-                      },
-                      function () {
-                        try {
-                          // Callback when settings change
-                          const newState = guiInstance.getState();
-                          console.log('[MapGL Settings Change] Callback fired with state:', newState);
-
-                          // DEBUG: Expose state globally
-                          if (!window.flowmapDebug) window.flowmapDebug = {};
-                          window.flowmapDebug.lastState = newState;
-                          window.flowmapDebug.map = map;
-                          window.flowmapDebug.config = flowmapConfig;
-
-                          // Capture previous state BEFORE updating (for comparison)
-                          const previousWebglBlendMode = previousState.webglBlendMode;
-
-                          // Update global config with new settings
-                          flowmapConfig.dimBasemap = newState.dimBasemap;
-                          flowmapConfig.cssBlendMode = newState.cssBlendMode;
-                          flowmapConfig.webglBlendMode = newState.webglBlendMode;
-
-                          // Update CSS blending mode (no layer recreation needed)
-                          try {
-                            updateDeckEffects(newState.darkMode);
-                          } catch (e) {
-                            console.error("[MapGL] updateDeckEffects failed:", e);
-                          }
-
-                          // Determine if we need layer recreation (versioned ID) or just prop update
-                          const needsRecreation =
-                            previousState.clusteringEnabled !== newState.clusteringEnabled ||
-                            previousState.clusteringMethod !== newState.clusteringMethod ||
-                            previousState.clusteringAuto !== newState.clusteringAuto ||
-                            (previousState.clusteringLevel !== newState.clusteringLevel && !newState.clusteringAuto) ||
-                            previousState.darkMode !== newState.darkMode ||
-                            previousWebglBlendMode !== newState.webglBlendMode;
-
-                          console.log('[MapGL Settings Change] Needs recreation:', needsRecreation);
-
-                          const layerProps = getLayerProps(newState);
-
-                          // GLOW FIX: If glow mode is active, ensure opacity is low enough to see the effect
-                          // and use numeric literals to avoid any scope issues with GL constants
-                          if (newState.webglBlendMode) {
-                            // [SRC_ALPHA, ONE] = [770, 1]
-                            layerProps.parameters = {
-                              blend: true,
-                              blendFunc: [770, 1],
-                              blendEquation: 32774, // FUNC_ADD
-                              depthTest: false
-                            };
-                            // Force lower opacity for better glow effect if user left it at 1.0
-                            // But respect user choice if they really want it.
-                            // Actually, let's not force opacity, but log it.
-                            console.log("[MapGL] Glow mode active. Opacity:", layerProps.opacity);
-                          }
-
-                          let updatedLayer;
-
-                          if (needsRecreation) {
-                            layerVersion++;
-                            const versionedId = `${flowmapConfig.id}-v${layerVersion}`;
-                            layerProps.id = versionedId;
-
-                            console.log('[MapGL Settings Change] Recreating layer:', versionedId);
-                            updatedLayer = new FlowmapLayer(layerProps);
-
-                            if (map._deckgl && map._flowmapLayers) {
-                              map._flowmapLayers = map._flowmapLayers.filter(l => !l.id.startsWith(flowmapConfig.id));
-                              map._flowmapLayers.push(updatedLayer);
-                              // Respect visibility from layer control
-                              const visibleLayers = map._flowmapLayers.filter(layer => {
-                                const baseId = layer.id.split('-v')[0];
-                                return !map._flowmapVisibility || map._flowmapVisibility[baseId] !== false;
-                              });
-                              map._deckgl.setProps({ layers: visibleLayers });
-                              console.log('[MapGL Settings Change] ✓ Layer recreated');
-                            }
-                          } else {
-                            layerProps.id = flowmapConfig.id;
-                            // Ensure updateTriggers are set explicitly
-                            layerProps.updateTriggers = {
-                              getFlowMagnitude: [newState.fadeEnabled, newState.fadeAmount, newState.fadeOpacityEnabled],
-                              all: [
-                                newState.darkMode,
-                                newState.colorScheme,
-                                newState.opacity,
-                                newState.animationEnabled,
-                                newState.fadeEnabled,
-                                flowmapConfig.cssBlendMode,
-                                flowmapConfig.webglBlendMode,
-                                newState.adaptiveScalesEnabled,
-                                newState.locationsEnabled,
-                                newState.locationTotalsEnabled,
-                                newState.locationLabelsEnabled,
-                                newState.maxTopFlowsDisplayNum
-                              ]
-                            };
-
-                            console.log('[MapGL Settings Change] Updating props for:', layerProps.id);
-                            updatedLayer = new FlowmapLayer(layerProps);
-
-                            if (map._deckgl && map._flowmapLayers) {
-                              const index = map._flowmapLayers.findIndex(l =>
-                                l.id === flowmapConfig.id || l.id.startsWith(flowmapConfig.id)
-                              );
-                              if (index !== -1) {
-                                map._flowmapLayers[index] = updatedLayer;
-                              } else {
-                                map._flowmapLayers.push(updatedLayer);
-                              }
-                              // Respect visibility from layer control
-                              const visibleLayers = map._flowmapLayers.filter(layer => {
-                                const baseId = layer.id.split('-v')[0];
-                                return !map._flowmapVisibility || map._flowmapVisibility[baseId] !== false;
-                              });
-                              map._deckgl.setProps({ layers: visibleLayers });
-                              console.log('[MapGL Settings Change] ✓ Props updated');
-                            }
-                          }
-
-                          // Update previous state
-                          previousState = { ...newState };
-
-                          // Trigger repaint
-                          setTimeout(() => {
-                            map.triggerRepaint();
-                          }, 10);
-
-                        } catch (err) {
-                          console.error("[MapGL] Settings Callback Error:", err);
-                        }
-                      }
-                    );
-
-                    // Store GUI instance for cleanup
-                    map._flowmapGUIs[flowmapConfig.id] = guiInstance;
-                  }
-                } catch (error) {
-                  console.error("Failed to create flowmap layer '" + flowmapConfig.id + "':", error);
-                }
-              });
-
-              // Update overlay with all flowmap layers
-              if (flowmapLayers.length > 0 && map._deckgl) {
-                try {
-                  // Initialize or update our local cache of layers
-                  if (!map._flowmapLayers) {
-                    map._flowmapLayers = [];
-                  }
-
-                  // Add new layers to our cache, replacing any with same ID
-                  flowmapLayers.forEach(newLayer => {
-                    const index = map._flowmapLayers.findIndex(l => l.id === newLayer.id);
-                    if (index !== -1) {
-                      map._flowmapLayers[index] = newLayer;
-                    } else {
-                      map._flowmapLayers.push(newLayer);
-                    }
-                  });
-
-                  // Respect visibility from layer control
-                  const visibleLayers = map._flowmapLayers.filter(layer => {
-                    const baseId = layer.id.split('-v')[0];
-                    return !map._flowmapVisibility || map._flowmapVisibility[baseId] !== false;
-                  });
-                  map._deckgl.setProps({ layers: visibleLayers });
-                  console.log("Flowmap layers added to Standalone Deck.gl:", flowmapLayers.length);
-                } catch (error) {
-                  console.error("Failed to set flowmap layers on overlay:", error);
-                }
-              }
-            }
-          }
-
           // Set terrain if provided
           if (x.terrain) {
             map.setTerrain({
@@ -2941,19 +1644,6 @@ HTMLWidgets.widget({
               drawOptions.modes.draw_radius = MapboxDraw.modes.draw_radius;
             }
 
-            if (x.draw_control.bezier || x.draw_control.bezier_polygon) {
-              drawOptions = enableBezierDrawMode(
-                drawOptions,
-                x.draw_control.styling,
-              );
-            }
-
-            if (_mapglHasDrawAttributes(x.draw_control.attributes)) {
-              drawOptions = Object.assign({}, drawOptions, {
-                userProperties: true,
-              });
-            }
-
             draw = new MapboxDraw(drawOptions);
             map.addControl(draw, x.draw_control.position);
             map.controls.push(draw);
@@ -3042,23 +1732,10 @@ HTMLWidgets.widget({
               }
             }
 
-            addBezierButtons(map, draw, {
-              bezier: x.draw_control.bezier,
-              bezierPolygon: x.draw_control.bezier_polygon,
-              controlGroupSelector:
-                ".mapboxgl-ctrl-group:has(.mapbox-gl-draw_polygon)",
-            });
-
-            initializeDrawAttributeEditor(map, draw, {
-              attributes: x.draw_control.attributes,
-              position: x.draw_control.position,
-              onChange: updateDrawnFeatures,
-            });
-
             // Add event listeners
-            map.on("draw.create", () => updateDrawnFeatures(false));
-            map.on("draw.delete", () => updateDrawnFeatures(false));
-            map.on("draw.update", () => updateDrawnFeatures(true));
+            map.on("draw.create", updateDrawnFeatures);
+            map.on("draw.delete", updateDrawnFeatures);
+            map.on("draw.update", updateDrawnFeatures);
 
             // Add measurement functionality if enabled
             if (x.draw_control.show_measurements) {
@@ -3072,7 +1749,6 @@ HTMLWidgets.widget({
             // Add initial features if provided
             if (x.draw_control.source) {
               addSourceFeaturesToDraw(draw, x.draw_control.source, map);
-              updateDrawnFeatures(false);
             }
 
             // Process any queued features
@@ -3083,7 +1759,6 @@ HTMLWidgets.widget({
                 }
                 addSourceFeaturesToDraw(draw, data.source, map);
               });
-              updateDrawnFeatures(false);
             }
 
             // Add custom mode buttons
@@ -3241,15 +1916,23 @@ HTMLWidgets.widget({
             }
           }
 
-          function updateDrawnFeatures(debounce) {
-            _mapglSyncDrawnFeatures({
-              inputId: el.id,
-              drawControl: draw,
-              widget: HTMLWidgets.find("#" + el.id),
-              syncUrl: x.sync_url,
-              mapglId: x.mapgl_id,
-              debounce: debounce,
-            });
+          function updateDrawnFeatures() {
+            if (draw) {
+              var drawnFeatures = draw.getAll();
+              if (HTMLWidgets.shinyMode) {
+                Shiny.setInputValue(
+                  el.id + "_drawn_features",
+                  JSON.stringify(drawnFeatures),
+                );
+              }
+              // Store drawn features in the widget's data
+              if (el.querySelector) {
+                var widget = HTMLWidgets.find("#" + el.id);
+                if (widget) {
+                  widget.drawFeatures = drawnFeatures;
+                }
+              }
+            }
           }
 
           if (!x.add) {
@@ -3266,20 +1949,6 @@ HTMLWidgets.widget({
             legend.innerHTML = x.legend_html;
             legend.classList.add("mapboxgl-legend");
             el.appendChild(legend);
-          }
-
-          // Initialize legend interactivity if configured
-          if (x.legend_interactivity && x.legend_interactivity.length > 0) {
-            x.legend_interactivity.forEach(function(config) {
-              if (typeof initializeLegendInteractivity === "function") {
-                initializeLegendInteractivity(map, el.id, config);
-              }
-            });
-          }
-
-          // Initialize draggable legends
-          if (typeof initializeDraggableLegends === "function") {
-            initializeDraggableLegends(el);
           }
 
           // Add fullscreen control if enabled
@@ -3369,8 +2038,25 @@ HTMLWidgets.widget({
             resetControl.className = "mapboxgl-ctrl-icon mapboxgl-ctrl-reset";
             resetControl.type = "button";
             resetControl.setAttribute("aria-label", "Reset");
-            resetControl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>';
-            resetControl.style.cssText = "display:flex;justify-content:center;align-items:center;cursor:pointer;";
+            resetControl.innerHTML = "⟲";
+            resetControl.style.fontSize = "30px";
+            resetControl.style.fontWeight = "bold";
+            resetControl.style.backgroundColor = "white";
+            resetControl.style.border = "none";
+            resetControl.style.cursor = "pointer";
+            resetControl.style.padding = "0";
+            resetControl.style.width = "30px";
+            resetControl.style.height = "30px";
+            resetControl.style.display = "flex";
+            resetControl.style.justifyContent = "center";
+            resetControl.style.alignItems = "center";
+            resetControl.style.transition = "background-color 0.2s";
+            resetControl.addEventListener("mouseover", function () {
+              this.style.backgroundColor = "#f0f0f0";
+            });
+            resetControl.addEventListener("mouseout", function () {
+              this.style.backgroundColor = "white";
+            });
 
             const resetContainer = document.createElement("div");
             resetContainer.className = "mapboxgl-ctrl mapboxgl-ctrl-group";
@@ -3430,22 +2116,20 @@ HTMLWidgets.widget({
             map.controls.push({ type: "screenshot", control: screenshotControlObj });
           }
 
-          // Add coordinates control if enabled
-          if (x.coordinates_control) {
-            const coordinatesControlObj = createCoordinatesControl(x.coordinates_control);
-            map.addControl(
-              coordinatesControlObj,
-              x.coordinates_control.position || "bottom-right",
-            );
-            map.controls.push({ type: "coordinates", control: coordinatesControlObj });
-          }
-
           if (x.setProjection) {
             x.setProjection.forEach(function (projectionConfig) {
               if (projectionConfig.projection) {
                 map.setProjection(projectionConfig.projection);
               }
             });
+          }
+
+          if (x.flowmaps && x.flowmaps.length > 0) {
+              if (window.MapGLFlowmapPlugin) {
+                  window.MapGLFlowmapPlugin.init(map, x, el, HTMLWidgets);
+              } else {
+                  console.error("MapGLFlowmapPlugin is not loaded.");
+              }
           }
 
           if (x.images && Array.isArray(x.images)) {
@@ -3589,75 +2273,48 @@ HTMLWidgets.widget({
                   const layerIds = JSON.parse(
                     this.getAttribute("data-layer-ids"),
                   );
-                    const layerType = this.getAttribute("data-layer-type");
-                    const firstLayerId = layerIds[0];
-
-                    if (layerType === "flowmap") {
-                      try {
-                        // Handle flowmap visibility
-                        if (!map._flowmapVisibility) {
-                          map._flowmapVisibility = {};
-                        }
-
-                        const currentVisibility = map._flowmapVisibility[firstLayerId];
-                        const isCurrentlyVisible = currentVisibility !== false;
-                        const nextVisibility = !isCurrentlyVisible;
-
-                        console.log(`[MapGL] Toggling flowmap ${firstLayerId}: ${isCurrentlyVisible} -> ${nextVisibility}`);
-
-                        map._flowmapVisibility[firstLayerId] = nextVisibility;
-                        this.className = nextVisibility ? "active" : "";
-
-                        // Update deck.gl layers by filtering based on visibility
-                        if (map._deckgl && map._flowmapLayers) {
-                          // Check if layers need cloning to avoid lifecycle issues
-                          const visibleLayers = map._flowmapLayers.filter(layer => {
-                            // Use safer replacement for version suffix
-                            const baseId = layer.id.replace(/-v\d+$/, '');
-                            return map._flowmapVisibility[baseId] !== false;
-                          }).map(l => l.clone ? l.clone() : new l.constructor(l.props));
-
-                          map._deckgl.setProps({ layers: visibleLayers });
-
-                          // Force repaint
-                          if (map.triggerRepaint) map.triggerRepaint();
-                        }
-                      } catch (err) {
-                        console.error("[MapGL] Error toggling flowmap:", err);
-                      }
-                    } else {
-                      // Handle regular layer visibility
-                      const visibility = map.getLayoutProperty(
-                        firstLayerId,
-                        "visibility",
-                      );
+                  const firstLayerId = layerIds[0];
+                  const visibility = map.getLayoutProperty(
+                    firstLayerId,
+                    "visibility",
+                  );
 
                   // Toggle visibility for all layer IDs in the group
-                  if (visibility === "visible") {
-                    layerIds.forEach((layerId) => {
-                      map.setLayoutProperty(layerId, "visibility", "none");
-                      // Hide associated legends
-                      const associatedLegends = document.querySelectorAll(
-                        `.mapboxgl-legend[data-layer-id="${layerId}"]`,
-                      );
-                      associatedLegends.forEach((legend) => {
-                        legend.style.display = "none";
-                      });
-                    });
-                    this.className = "";
-                  } else {
-                    layerIds.forEach((layerId) => {
-                      map.setLayoutProperty(layerId, "visibility", "visible");
-                      // Show associated legends
-                      const associatedLegends = document.querySelectorAll(
-                        `.mapboxgl-legend[data-layer-id="${layerId}"]`,
-                      );
-                      associatedLegends.forEach((legend) => {
-                        legend.style.display = "";
-                      });
-                    });
-                    this.className = "active";
+                  const targetVisibility = visibility === "visible" ? "none" : "visible";
+                  let handledByPlugin = false;
+                  if (window.MapGLFlowmapPlugin) {
+                      handledByPlugin = window.MapGLFlowmapPlugin.syncVisibility(map, layerIds, targetVisibility);
+                  }
+                  
+                  if (!handledByPlugin) {
+                      if (visibility === "visible") {
+                        layerIds.forEach((layerId) => {
+                          map.setLayoutProperty(layerId, "visibility", "none");
+                          // Hide associated legends
+                          const associatedLegends = document.querySelectorAll(
+                            `.mapboxgl-legend[data-layer-id="${layerId}"]`,
+                          );
+                          associatedLegends.forEach((legend) => {
+                            legend.style.display = "none";
+                          });
+                        });
+                        this.className = "";
+                      } else {
+                        layerIds.forEach((layerId) => {
+                          map.setLayoutProperty(layerId, "visibility", "visible");
+                          // Show associated legends
+                          const associatedLegends = document.querySelectorAll(
+                            `.mapboxgl-legend[data-layer-id="${layerId}"]`,
+                          );
+                          associatedLegends.forEach((legend) => {
+                            legend.style.display = "";
+                          });
+                        });
+                        this.className = "active";
                       }
+                  } else {
+                      // Plugin handled it, just update class
+                      this.className = targetVisibility === "visible" ? "active" : "";
                   }
                 };
 
@@ -3705,32 +2362,42 @@ HTMLWidgets.widget({
                   );
 
                   // Toggle layer visibility by changing the layout object's visibility property
-                  if (visibility === "visible") {
-                    map.setLayoutProperty(clickedLayer, "visibility", "none");
-                    this.className = "";
+                  const targetVisibility = visibility === "visible" ? "none" : "visible";
+                  let handledByPlugin = false;
+                  if (window.MapGLFlowmapPlugin) {
+                      handledByPlugin = window.MapGLFlowmapPlugin.syncVisibility(map, [clickedLayer], targetVisibility);
+                  }
 
-                    // Hide associated legends
-                    const associatedLegends = document.querySelectorAll(
-                      `.mapboxgl-legend[data-layer-id="${clickedLayer}"]`,
-                    );
-                    associatedLegends.forEach((legend) => {
-                      legend.style.display = "none";
-                    });
+                  if (!handledByPlugin) {
+                      if (visibility === "visible") {
+                        map.setLayoutProperty(clickedLayer, "visibility", "none");
+                        this.className = "";
+
+                        // Hide associated legends
+                        const associatedLegends = document.querySelectorAll(
+                          `.mapboxgl-legend[data-layer-id="${clickedLayer}"]`,
+                        );
+                        associatedLegends.forEach((legend) => {
+                          legend.style.display = "none";
+                        });
+                      } else {
+                        this.className = "active";
+                        map.setLayoutProperty(
+                          clickedLayer,
+                          "visibility",
+                          "visible",
+                        );
+
+                        // Show associated legends
+                        const associatedLegends = document.querySelectorAll(
+                          `.mapboxgl-legend[data-layer-id="${clickedLayer}"]`,
+                        );
+                        associatedLegends.forEach((legend) => {
+                          legend.style.display = "";
+                        });
+                      }
                   } else {
-                    this.className = "active";
-                    map.setLayoutProperty(
-                      clickedLayer,
-                      "visibility",
-                      "visible",
-                    );
-
-                    // Show associated legends
-                    const associatedLegends = document.querySelectorAll(
-                      `.mapboxgl-legend[data-layer-id="${clickedLayer}"]`,
-                    );
-                    associatedLegends.forEach((legend) => {
-                      legend.style.display = "";
-                    });
+                      this.className = targetVisibility === "visible" ? "active" : "";
                   }
                 };
 
@@ -3772,11 +2439,32 @@ HTMLWidgets.widget({
             map._initialStyleLoaded = true;
           }
 
-          // If clusters are present, attach event handling. Helper
-          // auto-branches on source capability (native vs precomputed).
+          // If clusters are present, add event handling
           map.getStyle().layers.forEach((layer) => {
             if (layer.id.includes("-clusters")) {
-              _mapglAttachClusterHandlers(map, layer.id, layer.source);
+              map.on("click", layer.id, (e) => {
+                const features = map.queryRenderedFeatures(e.point, {
+                  layers: [layer.id],
+                });
+                const clusterId = features[0].properties.cluster_id;
+                map
+                  .getSource(layer.source)
+                  .getClusterExpansionZoom(clusterId, (err, zoom) => {
+                    if (err) return;
+
+                    map.easeTo({
+                      center: features[0].geometry.coordinates,
+                      zoom: zoom,
+                    });
+                  });
+              });
+
+              map.on("mouseenter", layer.id, () => {
+                map.getCanvas().style.cursor = "pointer";
+              });
+              map.on("mouseleave", layer.id, () => {
+                map.getCanvas().style.cursor = "";
+              });
             }
           });
 
@@ -3926,14 +2614,21 @@ if (HTMLWidgets.shinyMode) {
       const layerState = window._mapglLayerState[mapId];
 
       // Helper function to update drawn features
-      function updateDrawnFeatures(debounce) {
+      function updateDrawnFeatures() {
         var drawControl = widget.drawControl || widget.getDraw();
-        _mapglSyncDrawnFeatures({
-          inputId: data.id,
-          drawControl: drawControl,
-          widget: widget,
-          debounce: debounce,
-        });
+        if (drawControl) {
+          var drawnFeatures = drawControl.getAll();
+          if (HTMLWidgets.shinyMode) {
+            Shiny.setInputValue(
+              data.id + "_drawn_features",
+              JSON.stringify(drawnFeatures),
+            );
+          }
+          // Store drawn features in the widget's data
+          if (widget) {
+            widget.drawFeatures = drawnFeatures;
+          }
+        }
       }
       if (message.type === "set_filter") {
         map.setFilter(message.layer, message.filter);
@@ -4101,18 +2796,6 @@ if (HTMLWidgets.shinyMode) {
             map.addLayer(message.layer);
           }
 
-          // Cluster click/cursor parity for layers added via proxy.
-          if (
-            message.layer.id &&
-            message.layer.id.includes("-clusters")
-          ) {
-            _mapglAttachClusterHandlers(
-              map,
-              message.layer.id,
-              message.layer.source,
-            );
-          }
-
           // Add popups or tooltips if provided
           if (message.layer.popup) {
             // Initialize popup tracking if it doesn't exist
@@ -4274,20 +2957,6 @@ if (HTMLWidgets.shinyMode) {
           delete window._mapboxPopups[message.layer];
         }
 
-        // Cascade: if this layer is the parent of a cluster_options
-        // shortcut (siblings `-clusters` and `-cluster-count` exist),
-        // remove those too. The shared source drops with the parent
-        // layer below. Siblings don't have popup/tooltip handlers of
-        // their own; the cluster click handlers are torn down by
-        // _mapglDetachClusterHandlers.
-        ["-clusters", "-cluster-count"].forEach((suffix) => {
-          const siblingId = message.layer + suffix;
-          if (map.getLayer(siblingId)) {
-            _mapglDetachClusterHandlers(map, siblingId);
-            map.removeLayer(siblingId);
-          }
-        });
-
         if (map.getLayer(message.layer)) {
           // Remove tooltip handlers
           if (window._mapboxHandlers && window._mapboxHandlers[message.layer]) {
@@ -4314,9 +2983,6 @@ if (HTMLWidgets.shinyMode) {
             );
             delete window._mapboxClickHandlers[message.layer];
           }
-
-          // Tear down cluster click/cursor handlers if any were attached.
-          _mapglDetachClusterHandlers(map, message.layer);
 
           // Remove the layer
           map.removeLayer(message.layer);
@@ -4477,11 +3143,6 @@ if (HTMLWidgets.shinyMode) {
         legend.innerHTML = message.html;
         legend.classList.add("mapboxgl-legend");
         document.getElementById(data.id).appendChild(legend);
-
-        // Initialize legend interactivity if configured
-        if (message.interactivity && typeof initializeLegendInteractivity === "function") {
-          initializeLegendInteractivity(map, data.id, message.interactivity);
-        }
       } else if (message.type === "set_config_property") {
         map.setConfigProperty(
           message.importId,
@@ -4826,6 +3487,9 @@ if (HTMLWidgets.shinyMode) {
           };
 
           map.once("style.load", function() {
+            if (window.MapGLFlowmapPlugin) {
+                window.MapGLFlowmapPlugin.handleStyleChange(map, message);
+            }
             // Wait for map to be fully idle before adding layers
             map.once("idle", onStyleLoad);
           });
@@ -4841,6 +3505,9 @@ if (HTMLWidgets.shinyMode) {
         // to re-add images and execute pending operations
         if (!preserveLayers) {
           map.once("style.load", function() {
+            if (window.MapGLFlowmapPlugin) {
+                window.MapGLFlowmapPlugin.handleStyleChange(map, message);
+            }
             map.once("idle", function() {
               // Re-add user images after style change
               reAddUserImagesMapbox(map, mapId);
@@ -4877,8 +3544,25 @@ if (HTMLWidgets.shinyMode) {
         resetControl.className = "mapboxgl-ctrl-icon mapboxgl-ctrl-reset";
         resetControl.type = "button";
         resetControl.setAttribute("aria-label", "Reset");
-        resetControl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>';
-        resetControl.style.cssText = "display:flex;justify-content:center;align-items:center;cursor:pointer;";
+        resetControl.innerHTML = "⟲";
+        resetControl.style.fontSize = "30px";
+        resetControl.style.fontWeight = "bold";
+        resetControl.style.backgroundColor = "white";
+        resetControl.style.border = "none";
+        resetControl.style.cursor = "pointer";
+        resetControl.style.padding = "0";
+        resetControl.style.width = "30px";
+        resetControl.style.height = "30px";
+        resetControl.style.display = "flex";
+        resetControl.style.justifyContent = "center";
+        resetControl.style.alignItems = "center";
+        resetControl.style.transition = "background-color 0.2s";
+        resetControl.addEventListener("mouseover", function () {
+          this.style.backgroundColor = "#f0f0f0";
+        });
+        resetControl.addEventListener("mouseout", function () {
+          this.style.backgroundColor = "white";
+        });
 
         const resetContainer = document.createElement("div");
         resetContainer.className = "mapboxgl-ctrl mapboxgl-ctrl-group";
@@ -4916,13 +3600,6 @@ if (HTMLWidgets.shinyMode) {
         const screenshotControlObj = createScreenshotControl(map, message.options, false);
         map.addControl(screenshotControlObj, message.options.position || "top-right");
         map.controls.push({ type: "screenshot", control: screenshotControlObj });
-      } else if (message.type === "add_coordinates_control") {
-        const coordinatesControlObj = createCoordinatesControl(message.options);
-        map.addControl(
-          coordinatesControlObj,
-          message.options.position || "bottom-right",
-        );
-        map.controls.push({ type: "coordinates", control: coordinatesControlObj });
       } else if (message.type === "add_draw_control") {
         let drawOptions = message.options || {};
 
@@ -4963,16 +3640,6 @@ if (HTMLWidgets.shinyMode) {
               draw_radius: MapboxDraw.modes.draw_radius,
             },
           );
-        }
-
-        if (message.bezier || message.bezier_polygon) {
-          drawOptions = enableBezierDrawMode(drawOptions, message.styling);
-        }
-
-        if (_mapglHasDrawAttributes(message.attributes)) {
-          drawOptions = Object.assign({}, drawOptions, {
-            userProperties: true,
-          });
         }
 
         // Create the draw control
@@ -5067,24 +3734,10 @@ if (HTMLWidgets.shinyMode) {
           }
         }
 
-        addBezierButtons(map, drawControl, {
-          bezier: message.bezier,
-          bezierPolygon: message.bezier_polygon,
-          controlGroupSelector:
-            ".mapboxgl-ctrl-group:has(.mapbox-gl-draw_polygon)",
-          iconClass: "mapboxgl-ctrl-icon",
-        });
-
-        initializeDrawAttributeEditor(map, drawControl, {
-          attributes: message.attributes,
-          position: message.position,
-          onChange: updateDrawnFeatures,
-        });
-
         // Add event listeners
-        map.on("draw.create", () => updateDrawnFeatures(false));
-        map.on("draw.delete", () => updateDrawnFeatures(false));
-        map.on("draw.update", () => updateDrawnFeatures(true));
+        map.on("draw.create", updateDrawnFeatures);
+        map.on("draw.delete", updateDrawnFeatures);
+        map.on("draw.update", updateDrawnFeatures);
 
         // Add measurement functionality if enabled
         if (message.show_measurements) {
@@ -5094,7 +3747,6 @@ if (HTMLWidgets.shinyMode) {
         // Add initial features if provided
         if (message.source) {
           addSourceFeaturesToDraw(drawControl, message.source, map);
-          updateDrawnFeatures(false);
         }
 
         // Add rectangle and radius buttons if enabled
@@ -5252,13 +3904,15 @@ if (HTMLWidgets.shinyMode) {
         var drawControl = widget.drawControl || widget.getDraw();
         if (drawControl) {
           const features = drawControl.getAll();
-          Shiny.setInputValue(data.id + "_drawn_features", features, {
-            priority: "event",
-          });
+          Shiny.setInputValue(
+            data.id + "_drawn_features",
+            JSON.stringify(features),
+          );
         } else {
-          Shiny.setInputValue(data.id + "_drawn_features", null, {
-            priority: "event",
-          });
+          Shiny.setInputValue(
+            data.id + "_drawn_features",
+            JSON.stringify(null),
+          );
         }
       } else if (message.type === "clear_drawn_features") {
         var drawControl = widget.drawControl || widget.getDraw();
@@ -5495,22 +4149,10 @@ if (HTMLWidgets.shinyMode) {
 
             // Check if the first layer's visibility is set to "none" initially
             const firstLayerId = layerIds[0];
-            let initialVisibility;
-
-            if (config.type === "flowmap") {
-              // For flowmaps, check if layer exists in _flowmapVisibility
-              if (!map._flowmapVisibility) {
-                map._flowmapVisibility = {};
-              }
-              // Default to visible if not explicitly set
-              initialVisibility = map._flowmapVisibility[firstLayerId] === false ? "none" : "visible";
-            } else {
-              // For regular layers, use getLayoutProperty
-              initialVisibility = map.getLayoutProperty(
-                firstLayerId,
-                "visibility",
-              );
-            }
+            const initialVisibility = map.getLayoutProperty(
+              firstLayerId,
+              "visibility",
+            );
             link.className = initialVisibility === "none" ? "" : "active";
 
             // Also hide any associated legends if the layer is initially hidden
@@ -5531,38 +4173,7 @@ if (HTMLWidgets.shinyMode) {
               e.stopPropagation();
 
               const layerIds = JSON.parse(this.getAttribute("data-layer-ids"));
-              const layerType = this.getAttribute("data-layer-type");
               const firstLayerId = layerIds[0];
-
-              if (layerType === "flowmap") {
-                // Handle flowmap visibility
-                if (!map._flowmapVisibility) {
-                  map._flowmapVisibility = {};
-                }
-
-                const isVisible = map._flowmapVisibility[firstLayerId] !== false;
-
-                if (isVisible) {
-                  // Hide the flowmap
-                  map._flowmapVisibility[firstLayerId] = false;
-                  this.className = "";
-                } else {
-                  // Show the flowmap
-                  map._flowmapVisibility[firstLayerId] = true;
-                  this.className = "active";
-                }
-
-                // Update deck.gl layers by filtering based on visibility
-                if (map._deckgl && map._flowmapLayers) {
-                  const visibleLayers = map._flowmapLayers.filter(layer => {
-                    // Extract base ID (remove version suffix like "-v1")
-                    const baseId = layer.id.split('-v')[0];
-                    return map._flowmapVisibility[baseId] !== false;
-                  });
-                  map._deckgl.setProps({ layers: visibleLayers });
-                }
-              } else {
-                // Handle regular layer visibility
               const visibility = map.getLayoutProperty(
                 firstLayerId,
                 "visibility",
@@ -5593,7 +4204,6 @@ if (HTMLWidgets.shinyMode) {
                   });
                 });
                 this.className = "active";
-              }
               }
             };
 

@@ -91,6 +91,11 @@ dependencies:
     version: 1.0.0
     src: htmlwidgets/lib/flowmap-settings
     script: flowmap-settings.js
+  - name: flowmap-plugin
+    version: 1.0.0
+    src: "htmlwidgets"
+    script: "flowmap.js"
+    stylesheet: "flowmap.css"
   - name: screenshot
     version: "1.0.0"
     src: "htmlwidgets"

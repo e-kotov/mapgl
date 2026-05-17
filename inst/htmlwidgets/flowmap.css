@@ -1,0 +1,53 @@
+/* Custom mapboxgl-legend styles for proper z-indexing with deck.gl */
+.mapboxgl-legend {
+    z-index: 2 !important;
+}
+
+/* Base deck.gl container overrides */
+#deck-container {
+    pointer-events: none !important;
+}
+#deck-container canvas {
+    pointer-events: none !important;
+}
+
+/* Flowmap-specific modes for CSS blending */
+.flowmap-dark-mode, .flowmap-light-mode {
+    /* Important: We do not set isolation: isolate here
+       to avoid affecting the flowmap when using interleaved rendering mode. */
+}
+
+/* Tooltip styling from flowmap.gl example */
+.flowmap-tooltip {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    border-radius: 4px;
+    padding: 8px;
+    position: absolute;
+    pointer-events: none;
+    z-index: 10;
+    max-width: 300px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    /* For tooltip blending over maps */
+    isolation: isolate;
+}
+
+.flowmap-tooltip .title {
+    font-weight: bold;
+    margin-bottom: 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+    padding-bottom: 4px;
+}
+
+.flowmap-tooltip .stat {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2px;
+}
+
+.flowmap-tooltip .stat .value {
+    font-weight: bold;
+    margin-left: 10px;
+}

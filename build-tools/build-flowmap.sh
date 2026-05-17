@@ -57,12 +57,15 @@ echo "Building flowmap.gl for mapgl R package"
 echo "========================================"
 
 # Paths (use absolute paths for reliability)
-MAPGL_DIR="$(cd "$(dirname "$0")" && pwd)"
-FLOWMAP_DIR="$(cd "$MAPGL_DIR/../flowmap.gl" && pwd)"
+MAPGL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -z "$FLOWMAP_DIR" ]; then
+    FLOWMAP_DIR="$(cd "$MAPGL_DIR/../flowmap.gl" && pwd)"
+fi
 OUTPUT_DIR="$MAPGL_DIR/inst/htmlwidgets/lib/flowmap-gl"
 
 # Known working commit (tested and verified)
-KNOWN_WORKING_COMMIT="4065dbef697a86ac7b85c6c5dd1bd961455a810d"
+KNOWN_COMMIT="ed581e11ca674ed1e17457a9526c864f8def678b"
+
 
 # Check if flowmap.gl directory exists
 if [ ! -d "$FLOWMAP_DIR" ]; then
@@ -157,6 +160,7 @@ export { FlowmapLayer, AnimatedFlowLinesLayer, FlowLinesLayer, FlowCirclesLayer 
 export * from '@flowmap.gl/data';
 export { MapboxOverlay } from '@deck.gl/mapbox';
 export { Deck } from '@deck.gl/core';
+export { ScatterplotLayer, TextLayer, LineLayer } from '@deck.gl/layers';
 EOF
 
 # Install required dependencies for bundling
@@ -164,7 +168,7 @@ echo "Installing bundling dependencies..."
 cd "$TEMP_DIR"
 yarn add @flowmap.gl/layers@file:$FLOWMAP_DIR/packages/layers
 yarn add @flowmap.gl/data@file:$FLOWMAP_DIR/packages/data
-yarn add @deck.gl/core@^8.9.0 @deck.gl/layers@^8.9.0 @deck.gl/mapbox@^8.9.0 @luma.gl/core@^8.5.10 @luma.gl/constants@^8.5.10
+yarn add @deck.gl/core@^9.0.0 @deck.gl/layers@^9.0.0 @deck.gl/mapbox@^9.0.0 @luma.gl/core@^9.0.0 @luma.gl/engine@^9.0.0 @luma.gl/shadertools@^9.0.0
 yarn add esbuild --dev
 
 # Step 3: Bundle with esbuild
