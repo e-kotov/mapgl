@@ -259,9 +259,16 @@ add_layers_control <- function(
   layers_config <- NULL
   if (is.null(layers)) {
     # If layers is NULL, get the layers added by the user
-    layers <- unlist(lapply(map$x$layers, function(y) {
-      y$id
-    }))
+    # Build layers_config to preserve type info (e.g., flowmap layers)
+    layers_config <- lapply(map$x$layers, function(y) {
+      list(
+        label = y$id,
+        ids = y$id,
+        type = if (!is.null(y$type)) y$type else "single"
+      )
+    })
+
+    layers <- unlist(lapply(layers_config, function(x) x$ids))
   } else if (is.list(layers) && !is.null(names(layers))) {
     # Named list: process labels and groups
     layers_config <- list()

@@ -77,6 +77,25 @@ dependencies:
     src: "htmlwidgets/lib/html2canvas"
     script:
       - "html2canvas.min.js"
+  - name: flowmap-gl
+    version: "8.0.2"
+    src: "htmlwidgets/lib/flowmap-gl"
+    script:
+      - "flowmap-gl-bundle.min.js"
+  - name: lil-gui
+    version: 0.19.2
+    src: htmlwidgets/lib/lil-gui
+    script: lil-gui.umd.min.js
+    stylesheet: lil-gui.min.css
+  - name: flowmap-settings
+    version: 1.0.0
+    src: htmlwidgets/lib/flowmap-settings
+    script: flowmap-settings.js
+  - name: flowmap-plugin
+    version: 1.0.0
+    src: "htmlwidgets"
+    script: "flowmap.js"
+    stylesheet: "flowmap.css"
   - name: screenshot
     version: "1.0.0"
     src: "htmlwidgets"
