@@ -124,6 +124,23 @@ flowmap_color_schemes <- function() {
 #' @param visibility Whether the layer is initially `"visible"` or `"none"`.
 #' @param before_id Optional map layer ID to render before.
 #' @param slot Optional Mapbox Standard slot.
+#' @param flow_scale_lock Whether to freeze flow and location-circle scale
+#'   domains during map interaction. Defaults to `FALSE`.
+#' @param flow_scale_domains Optional fixed domains, used when
+#'   `flow_scale_lock = TRUE`. Named list with optional `flowMagnitude`
+#'   and `locationTotals` numeric vectors of length two (minimum, maximum).
+#' @param flow_selected_time_ranges Optional list of non-contiguous time
+#'   intervals, each a two-element Date, POSIXct, ISO date/time string, or
+#'   numeric vector. Requires `flow_time_column` and cannot be combined with
+#'   `flow_selected_time_range`.
+#' @param flow_location_label_column Optional column in `locations` to use
+#'   for individual location labels, without changing `locations$name`.
+#' @param flow_projection Choose `"map"` for the existing flat-map overlay or
+#'   experimental `"globe"` to use deck.gl GlobeView with a globe basemap.
+#'   Requires the map's projection to be `"globe"` and compatible MapLibre
+#'   or Mapbox GL rendering; validate visually before using in production.
+#' @param flow_view_id Advanced optional deck.gl viewport ID. A mismatched
+#'   ID hides the flowmap. Normal maps use `NULL`.
 #'
 #' @return The modified map object with the flowmap layer added.
 #'
@@ -204,7 +221,13 @@ add_flowmap <- function(
   slot = NULL,
   flow_blending_mode = c("normal", "non-accumulating"),
   flow_location_label_props = NULL,
-  flow_wrap_longitude = FALSE
+  flow_wrap_longitude = FALSE,
+  flow_scale_lock = FALSE,
+  flow_scale_domains = NULL,
+  flow_selected_time_ranges = NULL,
+  flow_location_label_column = NULL,
+  flow_projection = c("map", "globe"),
+  flow_view_id = NULL
 ) {
   if (!inherits(map, "mapboxgl") && !inherits(map, "maplibregl")) {
     rlang::abort("`map` must be created by `mapboxgl()` or `maplibre()`.")
@@ -217,6 +240,7 @@ add_flowmap <- function(
   visibility <- match.arg(visibility)
   flow_lines_rendering_mode <- match.arg(flow_lines_rendering_mode)
   flow_blending_mode <- match.arg(flow_blending_mode)
+  flow_projection <- match.arg(flow_projection)
   flow_temporal_scale_domain <- match.arg(flow_temporal_scale_domain)
   flow_endpoints_in_viewport_mode <- match.arg(flow_endpoints_in_viewport_mode)
   flow_location_filter_mode <- match.arg(flow_location_filter_mode)
@@ -354,6 +378,25 @@ add_flowmap <- function(
     "flow_location_labels_enabled"
   )
   flowmap_validate_logical(flow_wrap_longitude, "flow_wrap_longitude")
+  flowmap_validate_logical(flow_scale_lock, "flow_scale_lock")
+  flow_scale_domains <- flowmap_normalize_scale_domains(flow_scale_domains)
+  if (!is.null(flow_scale_domains) && !flow_scale_lock) {
+    rlang::abort("A non-NULL `flow_scale_domains` requires `flow_scale_lock = TRUE`.")
+  }
+  flow_selected_time_ranges <- flowmap_normalize_time_ranges(flow_selected_time_ranges)
+  if (!is.null(flow_selected_time_ranges) && !is.null(flow_selected_time_range)) {
+    rlang::abort("Specify only one of `flow_selected_time_range` or `flow_selected_time_ranges`.")
+  }
+  if (!is.null(flow_selected_time_ranges) && is.null(flow_time_column)) {
+    rlang::abort("`flow_selected_time_ranges` requires `flow_time_column`.")
+  }
+  flow_location_label_column <- flowmap_validate_optional_string(
+    flow_location_label_column, "flow_location_label_column"
+  )
+  flow_view_id <- flowmap_validate_optional_string(flow_view_id, "flow_view_id")
+  if (identical(flow_projection, "globe") && !identical(map$x$projection, "globe")) {
+    rlang::abort("`flow_projection = 'globe'` requires a map with `projection = 'globe'`.")
+  }
   flow_location_label_props <- flowmap_normalize_location_label_props(
     flow_location_label_props
   )
@@ -438,6 +481,10 @@ add_flowmap <- function(
   slot <- flowmap_validate_optional_string(slot, "slot")
 
   locations <- flowmap_locations_to_df(locations)
+  if (!is.null(flow_location_label_column) &&
+      !flow_location_label_column %in% names(locations)) {
+    rlang::abort("`flow_location_label_column` must name a column in `locations`.")
+  }
   flows <- flowmap_flows_to_df(flows, time_column = flow_time_column)
   flowmap_validate_ids(locations, flows)
 
@@ -461,6 +508,11 @@ add_flowmap <- function(
       locationLabelProps = flow_location_label_props,
       flowLinesRenderingMode = flow_lines_rendering_mode,
       wrapLongitude = flow_wrap_longitude,
+      scaleLock = list(enabled = flow_scale_lock, domains = flow_scale_domains),
+      selectedTimeRanges = flow_selected_time_ranges,
+      locationLabelColumn = flow_location_label_column,
+      flowProjection = flow_projection,
+      viewId = flow_view_id,
       flowLineThicknessScale = flow_line_thickness_scale,
       flowLineCurviness = flow_line_curviness,
       clusteringEnabled = flow_clustering_enabled,
@@ -519,6 +571,9 @@ add_flowmap <- function(
 #' @param selected_locations Optional vector of location IDs to select.
 #' @param location_filter_mode Optional location filter mode: `"ALL"`, `"INCOMING"`, `"OUTGOING"`, or `"BETWEEN"`.
 #' @param selected_time_range Optional vector of two dates for time filtering.
+#' @param selected_time_ranges Optional list of two-element date/time intervals.
+#'   Use `list()` to clear a previous selection; cannot be combined with
+#'   `selected_time_range`.
 #'
 #' @return The modified map proxy.
 #' @export
@@ -527,12 +582,16 @@ set_flowmap_filter <- function(
   id,
   selected_locations = NULL,
   location_filter_mode = NULL,
-  selected_time_range = NULL
+  selected_time_range = NULL,
+  selected_time_ranges = NULL
 ) {
   if (!is.character(id) || length(id) != 1 || is.na(id) || !nzchar(id)) {
     rlang::abort("`id` must be a non-empty character string.")
   }
 
+  if (!is.null(selected_time_range) && !is.null(selected_time_ranges)) {
+    rlang::abort("Specify `selected_time_range` or `selected_time_ranges`, not both.")
+  }
   filter <- list()
   if (!is.null(selected_locations)) {
     if (!is.character(selected_locations) || anyNA(selected_locations)) {
@@ -566,6 +625,11 @@ set_flowmap_filter <- function(
     filter$selectedTimeRange <- selected_time_range
   }
 
+  if (!is.null(selected_time_ranges)) {
+    filter$selectedTimeRanges <- flowmap_normalize_time_ranges(
+      selected_time_ranges, arg = "selected_time_ranges"
+    )
+  }
   if (length(filter) == 0) {
     return(proxy)
   }
@@ -673,9 +737,12 @@ flowmap_invoke_method <- function(map, type, ...) {
           if (type == "set_flowmap_filter") {
             # Merge filter into settings (JS init will pick it up)
             if (!is.null(args$filter$selectedTimeRange)) {
-              map$x$flowmaps[[
-                i
-              ]]$settings$selectedTimeRange <- args$filter$selectedTimeRange
+              map$x$flowmaps[[i]]$settings$selectedTimeRange <- args$filter$selectedTimeRange
+              map$x$flowmaps[[i]]$settings$selectedTimeRanges <- NULL
+            }
+            if (!is.null(args$filter$selectedTimeRanges)) {
+              map$x$flowmaps[[i]]$settings$selectedTimeRanges <- args$filter$selectedTimeRanges
+              map$x$flowmaps[[i]]$settings$selectedTimeRange <- NULL
             }
             if (!is.null(args$filter$selectedLocations)) {
               map$x$flowmaps[[
@@ -724,6 +791,10 @@ flowmap_setting_name_map <- c(
   location_labels_enabled = "locationLabelsEnabled",
   locationLabelProps = "locationLabelProps",
   location_label_props = "locationLabelProps",
+  locationLabelColumn = "locationLabelColumn",
+  location_label_column = "locationLabelColumn",
+  scaleLock = "scaleLock",
+  scale_lock = "scaleLock",
   blendingMode = "blendingMode",
   blending_mode = "blendingMode",
   wrapLongitude = "wrapLongitude",
@@ -763,6 +834,8 @@ flowmap_setting_name_map <- c(
 flowmap_filter_setting_names <- c(
   "selectedTimeRange",
   "selected_time_range",
+  "selectedTimeRanges",
+  "selected_time_ranges",
   "selectedLocations",
   "selected_locations",
   "locationFilterMode",
@@ -833,6 +906,8 @@ flowmap_validate_setting_value <- function(name, value) {
     locationLabelProps = flowmap_normalize_location_label_props(value, arg = "value"),
     blendingMode = flowmap_validate_choice(value, "value", c("normal", "non-accumulating")),
     wrapLongitude = flowmap_validate_logical_setting(value),
+    scaleLock = flowmap_normalize_scale_lock(value, arg = "value"),
+    locationLabelColumn = flowmap_validate_optional_string(value, "value"),
     flowLinesRenderingMode = flowmap_validate_choice(
       value,
       "value",
@@ -868,6 +943,73 @@ flowmap_validate_setting_value <- function(name, value) {
       c("spotlight", "grayscale", "brighten")
     )
   )
+}
+
+# Normalize optional locked domains into the upstream FlowmapGL shape.
+flowmap_normalize_scale_domains <- function(value, arg = "flow_scale_domains") {
+  if (is.null(value)) return(NULL)
+  if (!is.list(value) || is.data.frame(value) || is.null(names(value)) ||
+      anyDuplicated(names(value)) || any(!nzchar(names(value))) ||
+      !length(value) || any(!names(value) %in% c("flowMagnitude", "locationTotals"))) {
+    rlang::abort(paste0("`", arg, "` must be a named list of `flowMagnitude` and/or `locationTotals`."))
+  }
+  for (name in names(value)) {
+    v <- value[[name]]
+    if (!is.numeric(v) || length(v) != 2L || any(!is.finite(v)) || v[1L] > v[2L]) {
+      rlang::abort(paste0("`", arg, "$", name, "` must be two finite numeric values ordered min, max."))
+    }
+  }
+  value
+}
+
+flowmap_normalize_scale_lock <- function(value, arg = "flow_scale_lock") {
+  if (is.logical(value)) {
+    flowmap_validate_logical(value, arg)
+    return(list(enabled = value))
+  }
+  if (!is.list(value) || is.null(value$enabled) ||
+      any(!names(value) %in% c("enabled", "domains"))) {
+    rlang::abort(paste0("`", arg, "` must be TRUE, FALSE, or a list with `enabled` and optional `domains`."))
+  }
+  flowmap_validate_logical(value$enabled, arg)
+  domains <- flowmap_normalize_scale_domains(value$domains, arg = paste0(arg, "$domains"))
+  if (!isTRUE(value$enabled) && !is.null(domains)) {
+    rlang::abort("Locked domains require `enabled = TRUE`.")
+  }
+  list(enabled = value$enabled, domains = domains)
+}
+
+# The custom vendored FlowmapGL patch supports multiple distinct time windows.
+flowmap_normalize_time_ranges <- function(value, arg = "flow_selected_time_ranges") {
+  if (is.null(value)) return(NULL)
+  if (!is.list(value) || is.data.frame(value)) {
+    rlang::abort(paste0("`", arg, "` must be a list of two-element time intervals."))
+  }
+  lapply(seq_along(value), function(i) {
+    window <- value[[i]]
+    if (length(window) != 2L || anyNA(window) ||
+        !(is.character(window) || is.numeric(window) ||
+          inherits(window, "Date") || inherits(window, "POSIXt"))) {
+      rlang::abort(paste0("`", arg, "[[", i, "]]` must contain two valid dates/times."))
+    }
+    if (inherits(window, "Date")) {
+      interval <- as.character(window)
+      ordered <- as.numeric(window)
+    } else if (inherits(window, "POSIXt")) {
+      interval <- format(as.POSIXct(window), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+      ordered <- as.numeric(as.POSIXct(window))
+    } else if (is.character(window)) {
+      interval <- as.character(window)
+      ordered <- suppressWarnings(as.numeric(as.POSIXct(interval, tz = "UTC")))
+    } else {
+      interval <- unname(window)
+      ordered <- as.numeric(window)
+    }
+    if (any(!is.finite(ordered)) || ordered[1L] >= ordered[2L]) {
+      rlang::abort(paste0("`", arg, "[[", i, "]]` must have a valid start before end."))
+    }
+    unname(interval)
+  })
 }
 
 flowmap_validate_logical_setting <- function(value) {
