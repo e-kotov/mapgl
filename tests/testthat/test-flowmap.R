@@ -182,12 +182,41 @@ test_that("flowmap click and node hover interactions work in a browser", {
   )
   if (!map_ready) skip("Flowmap did not initialize in the headless browser")
 
+  # Diagnose headless/WebGL picking failures without weakening any assertions.
+  picking_diagnostics <- js_value(
+    "var m=document.querySelector('.html-widget').map,d=m._deckgl;
+     var p=m.project([-74.01,40.75]),rect=m.getContainer().getBoundingClientRect();
+     var c=m._deckCanvas,gl=c&&(c.getContext('webgl2')||c.getContext('webgl'));
+     var pick=d.pickObject({x:p.x,y:p.y,radius:10});
+     var near=d.pickMultipleObjects&&d.pickMultipleObjects({x:p.x,y:p.y,radius:20,depth:5});
+     var layers=m._mapglFlowmapLayers.map(function(l){return {
+       id:l.id,visible:l.props.visible,pickable:l.props.pickable,
+       hasState:!!l.state,hasLayersData:!!l.state?.layersData,
+       hasCircles:!!l.state?.layersData?.circleAttributes,
+       hasLines:!!l.state?.layersData?.lineAttributes,
+       layerDataKeys:Object.keys(l.state?.layersData||{})
+     };});
+     return {
+       position:p,rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},
+       map:{zoom:m.getZoom(),projectedCenter:m.project([-73.98,40.75])},
+       canvas:c&&{w:c.width,h:c.height,clientW:c.clientWidth,clientH:c.clientHeight},
+       gl:gl&&{version:gl.getParameter(gl.VERSION),renderer:gl.getParameter(gl.RENDERER),
+         lost:gl.isContextLost(),width:gl.drawingBufferWidth,height:gl.drawingBufferHeight,
+         error:gl.getError()},
+       deck:{views:d.getViewports&&d.getViewports().map(v=>({id:v.id,width:v.width,height:v.height,zoom:v.zoom})),
+         layers:(d.props.layers||[]).map(l=>l.id)},
+       hit:pick&&{id:pick.layer?.id,source:pick.sourceLayer?.id,index:pick.index},
+       near:near&&near.map(x=>({id:x.layer?.id,source:x.sourceLayer?.id,index:x.index})),
+       layers:layers
+     };"
+  )
   click_location(-74.01)
   expect_true(wait_for(
     "var selected=document.querySelector('.html-widget').map._flowmapSelectedLocations.flows;
      return selected && selected.length===1 && String(selected[0])==='a';",
     timeout = 3
-  ))
+  ), info = paste("GPU picking diagnostic:",
+                   jsonlite::toJSON(picking_diagnostics, auto_unbox=TRUE, null="null")))
   click_location(-73.98, shift = TRUE)
   expect_true(wait_for(
     "var selected=document.querySelector('.html-widget').map._flowmapSelectedLocations.flows;
