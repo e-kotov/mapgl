@@ -347,7 +347,7 @@ test_that("add_flowmap validates tooltip content and style", {
   )
 })
 
-test_that("flowmap_color_schemes returns FlowMapGL 9.4.0 presets", {
+test_that("flowmap_color_schemes returns FlowMapGL 9.5.0 presets", {
   expected <- c(
     "Blues",
     "BluGrn",
@@ -1086,7 +1086,7 @@ test_that("flowmap vendoring manifest records temporal-scale patch", {
   )
   manifest <- jsonlite::read_json(manifest_path)
   patch_paths <- vapply(manifest$patches, `[[`, character(1), "path")
-  patch_path <- "data-raw/flowmap-vendor/patches/flowmap-temporal-scale-domain.patch"
+  patch_path <- "data-raw/flowmap-vendor/scripts/patch-flowmap-temporal-scale-domain.mjs"
 
   expect_equal(intersect(patch_paths, patch_path), patch_path)
 
