@@ -1,107 +1,66 @@
-name: FlowmapGL 9.5 vendoring preflight
+name: FlowmapGL vendoring and browser integration
 
 on:
-  push:
-    branches:
-      - chore/flowmap-gl-9.5.0-vendor
   pull_request:
     paths:
       - 'data-raw/flowmap-vendor/**'
       - 'inst/htmlwidgets/lib/flowmap-gl/**'
+      - 'inst/htmlwidgets/flowmap.js'
+      - 'R/flowmap.R'
+      - 'tests/testthat/test-flowmap*.R'
       - '.github/workflows/flowmap-95-preflight.yml'
+  workflow_dispatch:
 
 jobs:
-  npm-availability:
-    name: Verify upstream npm packages exist
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Check exact published versions
-        shell: bash
-        run: |
-          set -euo pipefail
-          for pkg in @flowmap.gl/data @flowmap.gl/layers; do
-            actual="$(npm view "$pkg@9.5.0" version --json)"
-            [[ "$actual" == '"9.5.0"' ]] || {
-              echo "::error::$pkg 9.5.0 is not yet on npm"
-              exit 1
-            }
-          done
-          npm view @deck.gl/extensions@9.4.1 version
-          npm view @luma.gl/core@9.4.0 version
-          npm view @deck.gl/mapbox@9.4.0 version
-          npm view @deck.gl/core@9.4.0 version
-          npm view @deck.gl/layers@9.4.0 version
-
-  inspect-compiled:
-    permissions:
-      contents: write
-    name: Inspect compiled upstream API for patch port
+  vendor:
+    name: Check pinned FlowmapGL vendor bundle
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-      - name: Install locked upstream runtime dependencies
+          node-version: '22.23.4'
+      - name: Check locked package versions
         working-directory: data-raw/flowmap-vendor
         run: |
-          rm package-lock.json
-          npm install --package-lock-only --ignore-scripts --loglevel=warn || { tail -100 ~/.npm/_logs/*-debug-0.log; exit 1; }
-          npm ci --ignore-scripts --loglevel=warn || { tail -100 ~/.npm/_logs/*-debug-0.log; exit 1; }
-      - name: Build FlowmapGL 9.5 patched browser assets
-        shell: bash
-        run: |
-          data-raw/flowmap-vendor/build-flowmap.sh build
-          data-raw/flowmap-vendor/build-flowmap.sh check
-      - name: Commit reproducible vendor artifacts
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data-raw/flowmap-vendor/package-lock.json \
-            inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js \
-            inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-vendor-manifest.json \
-            LICENSE.note
-          git diff --cached --check -- . ':!inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js'
-          if ! git diff --cached --quiet; then
-            git commit -m 'build: regenerate FlowmapGL 9.5 vendor bundle and SBOM'
-            git push origin HEAD:chore/flowmap-gl-9.5.0-vendor
-          fi
-      - name: Print patch locations
-        working-directory: data-raw/flowmap-vendor
-        run: |
-          for path in \
-            node_modules/@flowmap.gl/data/dist/FlowmapSelectors.js \
-            node_modules/@flowmap.gl/data/dist/FlowmapState.d.ts \
-            node_modules/@flowmap.gl/layers/dist/FlowmapLayer.js \
-            node_modules/@flowmap.gl/layers/dist/FlowmapLayer.d.ts; do
-            echo "::group::$path"
-            grep -nE 'getSelectedTimeRange|getSortedFlowsForKnownLocationsFilteredByTime|getSortedAggregatedFilteredFlows|_getFlowMagnitudeExtent|_getAdaptiveFlowMagnitudeExtent|getCurrentFlowMagnitudeExtent|_getSettingsState|adaptiveScalesEnabled|highlightColor|_getFlowmapState' "$path" | head -85 || true
-            echo "::endgroup::"
-          done
-      - name: Show compiled selector context
-        working-directory: data-raw/flowmap-vendor
-        run: |
+          npm ci --ignore-scripts
           node --input-type=module <<'JS'
           import fs from 'node:fs';
-          for (const [file, patterns] of [
-            ['node_modules/@flowmap.gl/data/dist/FlowmapSelectors.js', [
-              'this.getSelectedTimeRange =', 'this.getSortedFlowsForKnownLocationsFilteredByTime =',
-              'this.getSortedAggregatedFilteredFlows =', 'this._getFlowMagnitudeExtent =',
-              'this._getAdaptiveFlowMagnitudeExtent =']],
-            ['node_modules/@flowmap.gl/layers/dist/FlowmapLayer.js', [
-              "    'highlightColor',", '_getSettingsState(', '    adaptiveScalesEnabled: true,']]
-          ]) {
-            const lines = fs.readFileSync(file, 'utf8').split('\n');
-            console.log('FILE '+file+' total '+lines.length);
-            for(const pattern of patterns) {
-              const i=lines.findIndex(line=>line.includes(pattern));
-              console.log('---- '+pattern+' line '+(i+1));
-              if(i>=0) console.log(lines.slice(Math.max(0,i-4),Math.min(lines.length,i+35)).map((l,j)=>(Math.max(0,i-4)+j+1)+': '+l).join('\n'));
-            }
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          for (const name of ['@flowmap.gl/data', '@flowmap.gl/layers']) {
+            const version = lock.packages['node_modules/' + name].version;
+            if (version !== '9.5.0') throw new Error(`${name}: unexpected ${version}`);
           }
           JS
+      - name: Rebuild vendor assets and validate committed outputs
+        run: |
+          data-raw/flowmap-vendor/build-flowmap.sh check
+      - name: Ensure no unexpected workspace changes
+        run: git diff --exit-code -- data-raw/flowmap-vendor/package-lock.json LICENSE.note inst/htmlwidgets/lib/flowmap-gl
+
+  r-flowmap:
+    name: FlowmapGL R and Chromium regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgdal-dev libgeos-dev libproj-dev libudunits2-dev \
+            libcurl4-openssl-dev libssl-dev libxml2-dev
+      - name: Setup Chromium
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+      - name: Set Chromium executable
+        run: echo "CHROMOTE_CHROME=${{ steps.chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
+      - name: Install mapgl, testthat and chromote
+        run: |
+          Rscript -e 'install.packages("pak", repos="https://cloud.r-project.org")'
+          Rscript -e 'pak::pak(c("local::.", "chromote", "testthat"))'
+      - name: Run flowmap regression tests
+        run: Rscript -e 'testthat::test_local(filter="flowmap", reporter="summary")'
