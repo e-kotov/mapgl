@@ -70,5 +70,8 @@ jobs:
         run: |
           Rscript -e 'install.packages("pak", repos="https://cloud.r-project.org")'
           Rscript -e 'pak::pak(c("local::.", "chromote", "testthat"))'
-      - name: Run flowmap regression tests
-        run: Rscript -e 'testthat::test_local(filter="flowmap", reporter="summary")'
+      - name: Run flowmap regression tests with software WebGL
+        # New Chromium versions require explicit opt-in for SwiftShader WebGL
+        # on headless CI runners without a GPU. Keep the opt-in CI-only.
+        run: |
+          Rscript -e 'chromote::set_chrome_args(c(chromote::get_chrome_args(), "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader-webgl")); testthat::test_local(filter="flowmap", reporter="summary")'
