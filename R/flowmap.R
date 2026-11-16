@@ -1,6 +1,6 @@
 #' FlowMapGL color scheme names
 #'
-#' Returns the FlowMapGL 9.4.0 preset color scheme names supported by
+#' Returns the FlowMapGL 9.5.0 preset color scheme names supported by
 #' [add_flowmap()]. These names are case-sensitive.
 #'
 #' @details
