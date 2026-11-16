@@ -1086,7 +1086,7 @@ test_that("flowmap vendoring manifest records temporal-scale patch", {
   )
   manifest <- jsonlite::read_json(manifest_path)
   patch_paths <- vapply(manifest$patches, `[[`, character(1), "path")
-  patch_path <- "data-raw/flowmap-vendor/scripts/patch-flowmap-temporal-scale-domain.mjs"
+  patch_path <- "data-raw/flowmap-vendor/patches/flowmap-temporal-scale-domain.patch"
 
   expect_equal(intersect(patch_paths, patch_path), patch_path)
 

@@ -16,7 +16,7 @@ if (!outputDir || !licenseNotePath) {
 const vendorDir = fileURLToPath(new URL('../', import.meta.url));
 const lockPath = path.join(vendorDir, 'package-lock.json');
 const packagePath = path.join(vendorDir, 'package.json');
-const patchesDir = path.join(vendorDir, 'scripts');
+const patchesDir = path.join(vendorDir, 'patches');
 const bundleName = 'flowmap-gl-bundle.min.js';
 const manifestName = 'flowmap-gl-vendor-manifest.json';
 const additionalBundledPackages = [
@@ -51,7 +51,7 @@ const downloadedPackageSpecs = [
   }
 ];
 const patchPurposes = {
-  'scripts/patch-flowmap-temporal-scale-domain.mjs':
+  'patches/flowmap-temporal-scale-domain.patch':
     'Add temporalScaleDomain so temporal flow width/color domains can use selected-time or all-time flows.'
 };
 
@@ -163,15 +163,15 @@ async function getPatchMetadata() {
   }
 
   const patchNames = (await readdir(patchesDir))
-    .filter((name) => name === 'patch-flowmap-temporal-scale-domain.mjs')
+    .filter((name) => name.endsWith('.patch'))
     .sort();
 
   return Promise.all(
     patchNames.map(async (name) => {
       const patchPath = path.join(patchesDir, name);
       const contents = await readFile(patchPath);
-      const relativePath = `data-raw/flowmap-vendor/scripts/${name}`;
-      const purposeKey = `scripts/${name}`;
+      const relativePath = `data-raw/flowmap-vendor/patches/${name}`;
+      const purposeKey = `patches/${name}`;
       return {
         path: relativePath,
         sha256: createHash('sha256').update(contents).digest('hex'),

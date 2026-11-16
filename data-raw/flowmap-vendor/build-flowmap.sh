@@ -34,7 +34,8 @@ build_outputs() {
 
   cd "$VENDOR_DIR"
   npm ci --silent
-  node scripts/patch-flowmap-temporal-scale-domain.mjs
+  git -C "$ROOT_DIR" apply --check --directory="data-raw/flowmap-vendor" "$VENDOR_DIR/patches/flowmap-temporal-scale-domain.patch"
+  git -C "$ROOT_DIR" apply --directory="data-raw/flowmap-vendor" "$VENDOR_DIR/patches/flowmap-temporal-scale-domain.patch"
 
   mkdir -p "$output_dir"
   npx esbuild entry.js \
