@@ -1,0 +1,33 @@
+name: FlowmapGL 9.5 vendoring preflight
+
+on:
+  push:
+    branches:
+      - chore/flowmap-gl-9.5.0-vendor
+  pull_request:
+    paths:
+      - 'data-raw/flowmap-vendor/**'
+      - 'inst/htmlwidgets/lib/flowmap-gl/**'
+      - '.github/workflows/flowmap-95-preflight.yml'
+
+jobs:
+  npm-availability:
+    name: Verify upstream npm packages exist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check exact published versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pkg in @flowmap.gl/data @flowmap.gl/layers; do
+            actual="$(npm view "$pkg@9.5.0" version --json)"
+            [[ "$actual" == '"9.5.0"' ]] || {
+              echo "::error::$pkg 9.5.0 is not yet on npm"
+              exit 1
+            }
+          done
+          npm view @deck.gl/extensions@9.4.1 version
+          npm view @luma.gl/core@9.4.0 version
