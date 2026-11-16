@@ -9,8 +9,8 @@
   },
   "bundle": {
     "path": "inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js",
-    "sha256": "86c6c65c6393f96e15ff256c69778093b1e490ef0aeef24a7c3f4350fc775b35",
-    "bytes": 1226596
+    "sha256": "7bcf53f14d0554dd8ae686ba5f2f9ee4c3cd959d1eb1eadf5d331c83faac7f99",
+    "bytes": 1081204
   },
   "patches": [
     {
@@ -135,31 +135,31 @@
     },
     {
       "name": "@luma.gl/core",
-      "version": "9.4.0",
+      "version": "9.4.2",
       "license": "MIT",
-      "integrity": "sha512-2SIB77DoZ6LMZW/aPS/M3hKHP8UR0WR6f5R2+Sir5FdNVdOvFiOHAxPCafjVTxTqFWWHnh1NSCo5k/qq6sdFQw==",
-      "resolved": "https://registry.npmjs.org/@luma.gl/core/-/core-9.4.0.tgz",
-      "gitHead": "99c43c319cd7cc298388277ca3afb63cdfd5da7a",
+      "integrity": "sha512-VFol6FUSHQeYR40NrkCM/mkP5DX7aI8pcDewxI8DBjtrcP4+ZJiJwnxWZnsMBzM4RuuvmDoHkPWCxj6Ob9yo+w==",
+      "resolved": "https://registry.npmjs.org/@luma.gl/core/-/core-9.4.2.tgz",
+      "gitHead": "94e95a6ab4e5981d4d15e54cca540febd13f2775",
       "homepage": null,
       "repository": "https://github.com/visgl/luma.gl"
     },
     {
       "name": "@luma.gl/engine",
-      "version": "9.4.0",
+      "version": "9.4.2",
       "license": "MIT",
-      "integrity": "sha512-VK1kvdbGKzUmxNC0caR2YB65Q9VV5JA2bMOZwE3k6+mwrSymUrgIgjsNZHasjwe8QnSPlZNpMBsQDVVrdG9P1g==",
-      "resolved": "https://registry.npmjs.org/@luma.gl/engine/-/engine-9.4.0.tgz",
-      "gitHead": "99c43c319cd7cc298388277ca3afb63cdfd5da7a",
+      "integrity": "sha512-gBAcn+b1jOwE4pDF5zbuzMxCa/KGY3Q2Gq0gNUPU1AZHNk4aDgOEQaY2sqMsaoGHkDXB+pxneJQPw5c6Q5mnHA==",
+      "resolved": "https://registry.npmjs.org/@luma.gl/engine/-/engine-9.4.2.tgz",
+      "gitHead": "94e95a6ab4e5981d4d15e54cca540febd13f2775",
       "homepage": null,
       "repository": "https://github.com/visgl/luma.gl"
     },
     {
       "name": "@luma.gl/shadertools",
-      "version": "9.4.0",
+      "version": "9.4.2",
       "license": "MIT",
-      "integrity": "sha512-H+V0rfSdzpceJc3li7AvK3JlegrMr1293UsWx7g/4D907Kqk34YcOupkqqp367LYVZFC5rEzdnkcjqD7SjeBkA==",
-      "resolved": "https://registry.npmjs.org/@luma.gl/shadertools/-/shadertools-9.4.0.tgz",
-      "gitHead": "99c43c319cd7cc298388277ca3afb63cdfd5da7a",
+      "integrity": "sha512-0/6pLZSfnQnvcWdYePKKSwVet+gFtAAnKeGXNfxpgp3I8E3WsF/SbD6oEzgU7jdnRqONwGsoACWNpQHO0zZvIQ==",
+      "resolved": "https://registry.npmjs.org/@luma.gl/shadertools/-/shadertools-9.4.2.tgz",
+      "gitHead": "94e95a6ab4e5981d4d15e54cca540febd13f2775",
       "homepage": null,
       "repository": "https://github.com/visgl/luma.gl"
     },
@@ -175,56 +175,6 @@
     }
   ],
   "transitiveDependencies": [
-    {
-      "name": "@deck.gl/core/node_modules/@luma.gl/core",
-      "version": "9.4.2",
-      "license": "MIT",
-      "integrity": "sha512-VFol6FUSHQeYR40NrkCM/mkP5DX7aI8pcDewxI8DBjtrcP4+ZJiJwnxWZnsMBzM4RuuvmDoHkPWCxj6Ob9yo+w==",
-      "resolved": "https://registry.npmjs.org/@luma.gl/core/-/core-9.4.2.tgz",
-      "gitHead": "94e95a6ab4e5981d4d15e54cca540febd13f2775",
-      "homepage": null,
-      "repository": "https://github.com/visgl/luma.gl"
-    },
-    {
-      "name": "@deck.gl/core/node_modules/@luma.gl/engine",
-      "version": "9.4.2",
-      "license": "MIT",
-      "integrity": "sha512-gBAcn+b1jOwE4pDF5zbuzMxCa/KGY3Q2Gq0gNUPU1AZHNk4aDgOEQaY2sqMsaoGHkDXB+pxneJQPw5c6Q5mnHA==",
-      "resolved": "https://registry.npmjs.org/@luma.gl/engine/-/engine-9.4.2.tgz",
-      "gitHead": "94e95a6ab4e5981d4d15e54cca540febd13f2775",
-      "homepage": null,
-      "repository": "https://github.com/visgl/luma.gl"
-    },
-    {
-      "name": "@deck.gl/core/node_modules/@luma.gl/shadertools",
-      "version": "9.4.2",
-      "license": "MIT",
-      "integrity": "sha512-0/6pLZSfnQnvcWdYePKKSwVet+gFtAAnKeGXNfxpgp3I8E3WsF/SbD6oEzgU7jdnRqONwGsoACWNpQHO0zZvIQ==",
-      "resolved": "https://registry.npmjs.org/@luma.gl/shadertools/-/shadertools-9.4.2.tgz",
-      "gitHead": "94e95a6ab4e5981d4d15e54cca540febd13f2775",
-      "homepage": null,
-      "repository": "https://github.com/visgl/luma.gl"
-    },
-    {
-      "name": "@deck.gl/extensions/node_modules/@luma.gl/shadertools",
-      "version": "9.4.2",
-      "license": "MIT",
-      "integrity": "sha512-0/6pLZSfnQnvcWdYePKKSwVet+gFtAAnKeGXNfxpgp3I8E3WsF/SbD6oEzgU7jdnRqONwGsoACWNpQHO0zZvIQ==",
-      "resolved": "https://registry.npmjs.org/@luma.gl/shadertools/-/shadertools-9.4.2.tgz",
-      "gitHead": "94e95a6ab4e5981d4d15e54cca540febd13f2775",
-      "homepage": null,
-      "repository": "https://github.com/visgl/luma.gl"
-    },
-    {
-      "name": "@deck.gl/layers/node_modules/@luma.gl/shadertools",
-      "version": "9.4.2",
-      "license": "MIT",
-      "integrity": "sha512-0/6pLZSfnQnvcWdYePKKSwVet+gFtAAnKeGXNfxpgp3I8E3WsF/SbD6oEzgU7jdnRqONwGsoACWNpQHO0zZvIQ==",
-      "resolved": "https://registry.npmjs.org/@luma.gl/shadertools/-/shadertools-9.4.2.tgz",
-      "gitHead": "94e95a6ab4e5981d4d15e54cca540febd13f2775",
-      "homepage": null,
-      "repository": "https://github.com/visgl/luma.gl"
-    },
     {
       "name": "@esbuild/linux-x64",
       "version": "0.28.0",
