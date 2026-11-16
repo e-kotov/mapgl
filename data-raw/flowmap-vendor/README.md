@@ -35,7 +35,8 @@ data-raw/flowmap-vendor/build-flowmap.sh build
 data-raw/flowmap-vendor/build-flowmap.sh check
 ```
 
-The build command runs `npm ci`, applies the checked temporal-scale extension with assertion-checked\n`node scripts/patch-flowmap-temporal-scale-domain.mjs`, bundles `entry.js` with esbuild, and writes only the
+The build command runs `npm ci`, applies the checked temporal-scale extension with assertion-checked
+`node scripts/patch-flowmap-temporal-scale-domain.mjs`, bundles `entry.js` with esbuild, and writes only the
 minified runtime bundle and metadata:
 
 - `inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js`
