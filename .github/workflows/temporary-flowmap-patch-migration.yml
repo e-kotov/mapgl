@@ -107,3 +107,4 @@ jobs:
             git commit -m 'build: rebase 9.5 temporal scale patch as standard unified diff'
             git push origin HEAD:chore/flowmap-gl-9.5.0-vendor
           fi
+# One-time migration trigger
