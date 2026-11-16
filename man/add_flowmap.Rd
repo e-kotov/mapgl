@@ -14,12 +14,15 @@ add_flowmap(
   flow_opacity = 1,
   flow_dark_mode = "auto",
   flow_blend = "auto",
+  flow_blending_mode = c("normal", "non-accumulating"),
   flow_fade_amount = 50,
   flow_highlight_color = "#ff9b29",
   flow_locations_enabled = TRUE,
   flow_location_totals_enabled = TRUE,
   flow_location_labels_enabled = FALSE,
+  flow_location_label_props = NULL,
   flow_lines_rendering_mode = c("straight", "animated-straight", "curved"),
+  flow_wrap_longitude = FALSE,
   flow_line_thickness_scale = 1,
   flow_line_curviness = 1,
   flow_clustering_enabled = TRUE,
@@ -88,6 +91,12 @@ without throwing a warning. If \code{TRUE}, defaults to \code{"screen"} when \co
 and \code{"multiply"} when \code{FALSE}. If \code{FALSE}, no blending is applied. Note: CSS blending requires
 a standalone canvas overlay and is ignored when \code{before_id} or \code{slot} is specified.}
 
+\item{flow_blending_mode}{GPU flow-overlap rendering: \code{"normal"} retains
+existing rendering, while \code{"non-accumulating"} prevents overlapping
+flows from progressively darkening or brightening. Standalone overlays
+automatically use neutral-color clearing and compatible CSS blending,
+independent of \code{flow_blend}.}
+
 \item{flow_fade_amount}{Controls how much lower-magnitude flows fade compared to higher ones. Range: 0-100.}
 
 \item{flow_highlight_color}{Color used for FlowmapGL's hover highlight.
@@ -100,7 +109,19 @@ clusters; hover highlights on flows are suppressed.}
 
 \item{flow_location_labels_enabled}{Whether to show text labels at locations.}
 
+\item{flow_location_label_props}{Optional named list of serializable
+FlowmapGL TextLayer overrides using camelCase keys, such as \code{getSize},
+\code{getColor}, \code{fontFamily}, \code{outlineWidth}, \code{background},
+\code{backgroundColor}, or \code{collisionEnabled}. Colors accept CSS colors
+or 3/4-element RGB(A) byte arrays (0-255). Text is taken from the
+\code{name} column of \code{locations}, falling back to \code{id}.
+JavaScript callbacks and custom \code{getText} functions are unsupported.}
+
 \item{flow_lines_rendering_mode}{Controls how flow lines are rendered: \code{"straight"}, \code{"animated-straight"}, or \code{"curved"}.}
+
+\item{flow_wrap_longitude}{When \code{TRUE}, flat-map flows that cross the
+antimeridian take the shorter route. Defaults to \code{FALSE} to preserve
+previous behavior. Globe flows follow great circles regardless.}
 
 \item{flow_line_thickness_scale}{Multiplier for flow line thickness.}
 
