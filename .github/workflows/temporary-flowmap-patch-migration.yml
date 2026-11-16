@@ -55,7 +55,7 @@ jobs:
           old = '  node scripts/patch-flowmap-temporal-scale-domain.mjs'
           assert body.count(old) == 1
           replacement = '''  git -C "$ROOT_DIR" apply --check --directory="data-raw/flowmap-vendor" "$VENDOR_DIR/patches/flowmap-temporal-scale-domain.patch"
-  git -C "$ROOT_DIR" apply --directory="data-raw/flowmap-vendor" "$VENDOR_DIR/patches/flowmap-temporal-scale-domain.patch"'''
+            git -C "$ROOT_DIR" apply --directory="data-raw/flowmap-vendor" "$VENDOR_DIR/patches/flowmap-temporal-scale-domain.patch"'''
           build.write_text(body.replace(old, replacement))
           meta = Path('data-raw/flowmap-vendor/scripts/generate-vendor-metadata.mjs')
           body = meta.read_text()
