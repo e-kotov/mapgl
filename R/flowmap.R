@@ -744,12 +744,12 @@ flowmap_invoke_method <- function(map, type, ...) {
         if (map$x$flowmaps[[i]]$id == id) {
           if (type == "set_flowmap_filter") {
             # Merge filter into settings (JS init will pick it up)
-            if (!is.null(args$filter$selectedTimeRange)) {
-              map$x$flowmaps[[i]]$settings$selectedTimeRange <- args$filter$selectedTimeRange
+            if (!is.null(args$filter[["selectedTimeRange", exact = TRUE]])) {
+              map$x$flowmaps[[i]]$settings$selectedTimeRange <- args$filter[["selectedTimeRange", exact = TRUE]]
               map$x$flowmaps[[i]]$settings$selectedTimeRanges <- NULL
             }
-            if (!is.null(args$filter$selectedTimeRanges)) {
-              map$x$flowmaps[[i]]$settings$selectedTimeRanges <- args$filter$selectedTimeRanges
+            if (!is.null(args$filter[["selectedTimeRanges", exact = TRUE]])) {
+              map$x$flowmaps[[i]]$settings$selectedTimeRanges <- args$filter[["selectedTimeRanges", exact = TRUE]]
               map$x$flowmaps[[i]]$settings$selectedTimeRange <- NULL
             }
             if (!is.null(args$filter$selectedLocations)) {
