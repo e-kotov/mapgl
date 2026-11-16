@@ -47,7 +47,13 @@ add_flowmap(
   slot = NULL,
   flow_blending_mode = c("normal", "non-accumulating"),
   flow_location_label_props = NULL,
-  flow_wrap_longitude = FALSE
+  flow_wrap_longitude = FALSE,
+  flow_scale_lock = FALSE,
+  flow_scale_domains = NULL,
+  flow_selected_time_ranges = NULL,
+  flow_location_label_column = NULL,
+  flow_projection = c("map", "globe"),
+  flow_view_id = NULL
 )
 }
 \arguments{
@@ -122,6 +128,28 @@ JavaScript callbacks and custom \code{getText} functions are unsupported.}
 \item{flow_wrap_longitude}{When \code{TRUE}, flat-map flows that cross the
 antimeridian take the shorter route. Defaults to \code{FALSE} to preserve
 previous behavior. Globe flows follow great circles regardless.}
+
+\item{flow_scale_lock}{Whether to freeze flow and location-circle scale
+domains during interaction. Defaults to \code{FALSE}.}
+
+\item{flow_scale_domains}{Optional explicit locked domains, as a named
+list with \code{flowMagnitude} and/or \code{locationTotals} numeric
+two-element min/max vectors. Requires \code{flow_scale_lock = TRUE}.}
+
+\item{flow_selected_time_ranges}{Optional list of non-contiguous
+two-element time ranges. Requires \code{flow_time_column}; cannot be used
+together with \code{flow_selected_time_range}.}
+
+\item{flow_location_label_column}{Optional field name in \code{locations}
+used as the label text for individual locations.}
+
+\item{flow_projection}{Choose \code{"map"} for the existing flat-map
+FlowmapGL overlay, or experimental \code{"globe"} to draw flows using
+deck.gl GlobeView on a compatible globe basemap. Visual alignment should
+be verified before production use.}
+
+\item{flow_view_id}{Advanced optional deck.gl viewport ID. A nonexistent
+ID hides the layer. Normally leave as \code{NULL}.}
 
 \item{flow_line_thickness_scale}{Multiplier for flow line thickness.}
 
