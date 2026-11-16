@@ -48,6 +48,43 @@ jobs:
           npm ci --silent
           git -C ../.. apply --check --directory='data-raw/flowmap-vendor' "data-raw/flowmap-vendor/$patchfile"
           cd ../..
+          python3 - <<'PY'
+          from pathlib import Path
+          build = Path('data-raw/flowmap-vendor/build-flowmap.sh')
+          body = build.read_text()
+          old = '  node scripts/patch-flowmap-temporal-scale-domain.mjs'
+          assert body.count(old) == 1
+          replacement = '''  git -C "$ROOT_DIR" apply --check --directory="data-raw/flowmap-vendor" "$VENDOR_DIR/patches/flowmap-temporal-scale-domain.patch"
+  git -C "$ROOT_DIR" apply --directory="data-raw/flowmap-vendor" "$VENDOR_DIR/patches/flowmap-temporal-scale-domain.patch"'''
+          build.write_text(body.replace(old, replacement))
+          meta = Path('data-raw/flowmap-vendor/scripts/generate-vendor-metadata.mjs')
+          body = meta.read_text()
+          pairs = [
+            ("const patchesDir = path.join(vendorDir, 'scripts');", "const patchesDir = path.join(vendorDir, 'patches');"),
+            ("'scripts/patch-flowmap-temporal-scale-domain.mjs':", "'patches/flowmap-temporal-scale-domain.patch':"),
+            (".filter((name) => name === 'patch-flowmap-temporal-scale-domain.mjs')", ".filter((name) => name.endsWith('.patch'))"),
+            ("const relativePath = `data-raw/flowmap-vendor/scripts/${name}`;", "const relativePath = `data-raw/flowmap-vendor/patches/${name}`;"),
+            ("const purposeKey = `scripts/${name}`;", "const purposeKey = `patches/${name}`;")
+          ]
+          for old, new in pairs:
+            assert body.count(old) == 1, f'Metadata anchor count not one: {old}'
+            body = body.replace(old, new)
+          meta.write_text(body)
+          readme = Path('data-raw/flowmap-vendor/README.md')
+          body = readme.read_text()
+          body = body.replace('changing the patch script under `scripts/`', 'changing a patch under `patches/`')
+          body = body.replace('runs `npm ci`, applies the checked temporal-scale extension with assertion-checked\\n`node scripts/patch-flowmap-temporal-scale-domain.mjs`,', 'runs `npm ci`, checks and applies `patches/*.patch` using `git apply`,')
+          body = body.replace('runs `npm ci`, applies the checked temporal-scale extension with assertion-checked\n`node scripts/patch-flowmap-temporal-scale-domain.mjs`,', 'runs `npm ci`, checks and applies `patches/*.patch` using `git apply`,')
+          body = body.replace('`scripts/patch-flowmap-temporal-scale-domain.mjs`', '`patches/flowmap-temporal-scale-domain.patch`')
+          body = body.replace('If the compiled-ESM patch fails', 'If the patch fails')
+          body = body.replace('rebase the assertion-checked script', 'rebase the standard patch')
+          readme.write_text(body)
+          tests = Path('tests/testthat/test-flowmap.R')
+          body = tests.read_text()
+          old = 'data-raw/flowmap-vendor/scripts/patch-flowmap-temporal-scale-domain.mjs'
+          assert body.count(old) == 1
+          tests.write_text(body.replace(old, 'data-raw/flowmap-vendor/patches/flowmap-temporal-scale-domain.patch'))
+          PY
           data-raw/flowmap-vendor/build-flowmap.sh build
           data-raw/flowmap-vendor/build-flowmap.sh check
           rebuilt_sha="$(sha256sum inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js | awk '{print $1}')"
@@ -58,6 +95,10 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add data-raw/flowmap-vendor/patches/flowmap-temporal-scale-domain.patch \
+            data-raw/flowmap-vendor/build-flowmap.sh \
+            data-raw/flowmap-vendor/scripts/generate-vendor-metadata.mjs \
+            data-raw/flowmap-vendor/README.md \
+            tests/testthat/test-flowmap.R \
             inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js \
             inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-vendor-manifest.json \
             LICENSE.note
