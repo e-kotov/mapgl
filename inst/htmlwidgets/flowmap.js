@@ -695,12 +695,13 @@ window.MapGLFlowmapPlugin = (function () {
   // Connect the upstream FlowmapLegendWidget to each flowmap's live scale state.
   function flowmapLegendWidgets(map) {
     if (!FlowmapGL.FlowmapLegendWidget) return [];
+    if (!map._flowmapLegendWidgetCache) map._flowmapLegendWidgetCache = {};
     return (map._flowmapLegendsConfig || []).map(function (spec) {
       const layer = (map._flowmapsConfig || []).find(function (c) { return c.id === spec.id; });
       if (!layer || layer.visibility === "none") return null;
       const opts = layer.settings || {};
       const id = spec.id;
-      return new FlowmapGL.FlowmapLegendWidget({
+      const props = {
         id: "mapgl-flowmap-legend-" + id,
         placement: spec.placement || "bottom-left",
         viewId: opts.viewId || undefined,
@@ -712,7 +713,18 @@ window.MapGLFlowmapPlugin = (function () {
         onToggleLock: function (locked) {
           setSettings(map, id, {scaleLock: {enabled: locked}});
         }
-      });
+      };
+      // Keep widget identity stable when flow layers redraw (e.g. during
+      // hover spotlight). Otherwise legend DOM and the focused lock button
+      // would be repeatedly unmounted.
+      let widget = map._flowmapLegendWidgetCache[id];
+      if (!widget) {
+        widget = new FlowmapGL.FlowmapLegendWidget(props);
+        map._flowmapLegendWidgetCache[id] = widget;
+      } else {
+        widget.setProps(props);
+      }
+      return widget;
     }).filter(Boolean);
   }
 
