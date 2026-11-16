@@ -583,7 +583,8 @@ set_flowmap_filter <- function(
 #' @param name The setting name to update. Supported canonical FlowMapGL
 #'   setting names are `opacity`, `colorScheme`, `darkMode`, `fadeAmount`,
 #'   `highlightColor`, `locationsEnabled`, `locationTotalsEnabled`,
-#'   `locationLabelsEnabled`, `flowLinesRenderingMode`,
+#'   `locationLabelsEnabled`, `locationLabelProps`, `blendingMode`,
+#'   `wrapLongitude`, `flowLinesRenderingMode`,
 #'   `flowLineThicknessScale`, `flowLineCurviness`, `clusteringEnabled`,
 #'   `clusteringAuto`, `clusteringLevel`, `fadeEnabled`,
 #'   `fadeOpacityEnabled`, `adaptiveScalesEnabled`, `temporalScaleDomain`,
@@ -591,6 +592,7 @@ set_flowmap_filter <- function(
 #'   `hoverToSpotlight`, and `spotlightMode`. Equivalent snake-case aliases
 #'   such as `color_scheme`, `temporal_scale_domain`,
 #'   `max_top_flows_display_num`, `flow_endpoints_in_viewport_mode`,
+#'   `location_label_props`, `blending_mode`, `wrap_longitude`,
 #'   `click_to_filter`, `hover_to_spotlight`, and `spotlight_mode` are accepted
 #'   and normalized internally.
 #'   Filter state (`selectedTimeRange`, `selectedLocations`, and
@@ -610,6 +612,10 @@ set_flowmap_filter <- function(
 #' `temporalScaleDomain` must be `"selected"` or `"all"`.
 #' `flowEndpointsInViewportMode` must be `"any"` or `"both"`.
 #' `spotlightMode` must be `"spotlight"`, `"grayscale"`, or `"brighten"`.
+#' `blendingMode` must be `"normal"` or `"non-accumulating"`;
+#' `wrapLongitude` must be logical; and `locationLabelProps` follows
+#' `flow_location_label_props` in [add_flowmap()]. On standalone overlays,
+#' changing `blendingMode` also changes the canvas clear effect and CSS style.
 #' Boolean settings must be scalar `TRUE` or `FALSE`.
 #' @export
 set_flowmap_settings <- function(map, id, name, value) {
@@ -716,6 +722,12 @@ flowmap_setting_name_map <- c(
   location_totals_enabled = "locationTotalsEnabled",
   locationLabelsEnabled = "locationLabelsEnabled",
   location_labels_enabled = "locationLabelsEnabled",
+  locationLabelProps = "locationLabelProps",
+  location_label_props = "locationLabelProps",
+  blendingMode = "blendingMode",
+  blending_mode = "blendingMode",
+  wrapLongitude = "wrapLongitude",
+  wrap_longitude = "wrapLongitude",
   flowLinesRenderingMode = "flowLinesRenderingMode",
   flow_lines_rendering_mode = "flowLinesRenderingMode",
   flowLineThicknessScale = "flowLineThicknessScale",
@@ -818,6 +830,9 @@ flowmap_validate_setting_value <- function(name, value) {
     locationsEnabled = flowmap_validate_logical_setting(value),
     locationTotalsEnabled = flowmap_validate_logical_setting(value),
     locationLabelsEnabled = flowmap_validate_logical_setting(value),
+    locationLabelProps = flowmap_normalize_location_label_props(value, arg = "value"),
+    blendingMode = flowmap_validate_choice(value, "value", c("normal", "non-accumulating")),
+    wrapLongitude = flowmap_validate_logical_setting(value),
     flowLinesRenderingMode = flowmap_validate_choice(
       value,
       "value",
