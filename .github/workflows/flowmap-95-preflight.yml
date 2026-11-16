@@ -35,6 +35,9 @@ jobs:
       - name: Rebuild vendor assets and validate committed outputs
         run: |
           data-raw/flowmap-vendor/build-flowmap.sh check
+      - name: Test temporal scale domains and disjoint time intervals
+        working-directory: data-raw/flowmap-vendor
+        run: node scripts/test-temporal-scale-domain.mjs
       - name: Ensure no unexpected workspace changes
         run: git diff --exit-code -- data-raw/flowmap-vendor/package-lock.json LICENSE.note inst/htmlwidgets/lib/flowmap-gl
 
