@@ -9,7 +9,8 @@ set_flowmap_filter(
   id,
   selected_locations = NULL,
   location_filter_mode = NULL,
-  selected_time_range = NULL
+  selected_time_range = NULL,
+  selected_time_ranges = NULL
 )
 }
 \arguments{
@@ -22,6 +23,10 @@ set_flowmap_filter(
 \item{location_filter_mode}{Optional location filter mode: \code{"ALL"}, \code{"INCOMING"}, \code{"OUTGOING"}, or \code{"BETWEEN"}.}
 
 \item{selected_time_range}{Optional vector of two dates for time filtering.}
+
+\item{selected_time_ranges}{Optional list of non-overlapping or disjoint two-element
+intervals. Use \code{list()} to clear; not valid together with
+\code{selected_time_range}.}
 }
 \value{
 The modified map proxy.
