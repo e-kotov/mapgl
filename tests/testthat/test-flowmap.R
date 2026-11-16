@@ -312,6 +312,37 @@ test_that("flowmap click and node hover interactions work in a browser", {
     list(sync = gpu_pixel_probe, async = gpu_async_probe),
     auto_unbox = TRUE, null = "null"
   ))
+  # Temporary diagnostic: verify model.draw is actually called during picking.
+  model_probe <- tryCatch(js_value(
+    "var m=document.querySelector('.html-widget').map,d=m._deckgl,p=m.project([-74.01,40.75]);
+     var layers=d.layerManager.getLayers().filter(l=>l.state?.model),
+         calls=[],originals=[],errors=[];
+     var previousError=d.props.onError;
+     d.setProps({onError:e=>errors.push(e?.message||String(e))});
+     for(var layer of layers){
+       let model=layer.state.model,original=model.draw.bind(model),id=layer.id;
+       originals.push({model,draw:model.draw});
+       model.draw=function(...args){
+         var item={id,hasRenderPass:!!args[0],
+           instanceCount:model.instanceCount,vertexCount:model.vertexCount,
+           indexCount:model.indexCount,modelKeys:Object.keys(model).slice(0,20)};
+         try{item.result=original(...args);}
+         catch(e){item.error=String(e);}
+         calls.push(item);
+         if(item.error)throw Error(item.error);
+         return item.result;
+       };
+     }
+     var hit=null,err=null;
+     try{hit=d.pickObject({x:p.x,y:p.y,radius:25});}
+     catch(e){err=String(e)}
+     finally{for(const item of originals)item.model.draw=item.draw;d.setProps({onError:previousError});}
+     return {calls,errors,hit:hit&&{id:hit.layer?.id,index:hit.index},err,
+       deviceType:d.deckPicker?.device?.type};"
+  ), error = function(e) list(error = conditionMessage(e)))
+  message("FLOWMAP_MODEL_DEBUG ", jsonlite::toJSON(
+    model_probe, auto_unbox = TRUE, null = "null"
+  ))
   click_location(-74.01)
   expect_true(wait_for(
     "var selected=document.querySelector('.html-widget').map._flowmapSelectedLocations.flows;
