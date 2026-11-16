@@ -39,3 +39,4 @@ jobs:
         run: |
           echo "Testing branch ${{ matrix.ref }} at $(git rev-parse HEAD)"
           Rscript -e 'chromote::set_chrome_args(c(chromote::get_chrome_args(), "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader-webgl")); testthat::test_local(filter="flowmap", reporter="summary")'
+# temporary comparison trigger
