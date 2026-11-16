@@ -16,7 +16,7 @@ object created by \code{\link[=mapboxgl_proxy]{mapboxgl_proxy()}} or \code{\link
 setting names are \code{opacity}, \code{colorScheme}, \code{darkMode}, \code{fadeAmount},
 \code{highlightColor}, \code{locationsEnabled}, \code{locationTotalsEnabled},
 \code{locationLabelsEnabled}, \code{locationLabelProps}, \code{blendingMode},
-\code{wrapLongitude}, \code{flowLinesRenderingMode},
+\code{wrapLongitude}, \code{scaleLock}, \code{locationLabelColumn}, \code{flowLinesRenderingMode},
 \code{flowLineThicknessScale}, \code{flowLineCurviness}, \code{clusteringEnabled},
 \code{clusteringAuto}, \code{clusteringLevel}, \code{fadeEnabled},
 \code{fadeOpacityEnabled}, \code{adaptiveScalesEnabled}, \code{temporalScaleDomain},
@@ -24,10 +24,12 @@ setting names are \code{opacity}, \code{colorScheme}, \code{darkMode}, \code{fad
 \code{hoverToSpotlight}, and \code{spotlightMode}. Equivalent snake-case aliases
 such as \code{color_scheme}, \code{temporal_scale_domain},
 \code{max_top_flows_display_num}, \code{flow_endpoints_in_viewport_mode},
-\code{location_label_props}, \code{blending_mode}, \code{wrap_longitude},
+\code{location_label_props}, \code{location_label_column}, \code{scale_lock},
+\code{blending_mode}, \code{wrap_longitude},
 \code{click_to_filter}, \code{hover_to_spotlight}, and \code{spotlight_mode} are accepted
 and normalized internally.
-Filter state (\code{selectedTimeRange}, \code{selectedLocations}, and
+Filter state (\code{selectedTimeRange}, \code{selectedTimeRanges},
+\code{selectedLocations}, and
 \code{locationFilterMode}) must be updated with \code{\link[=set_flowmap_filter]{set_flowmap_filter()}}.}
 
 \item{value}{The setting value.}
@@ -50,7 +52,9 @@ be \code{"straight"}, \code{"animated-straight"}, or \code{"curved"}.
 \code{flowEndpointsInViewportMode} must be \code{"any"} or \code{"both"}.
 \code{spotlightMode} must be \code{"spotlight"}, \code{"grayscale"}, or \code{"brighten"}.
 \code{blendingMode} must be \code{"normal"} or \code{"non-accumulating"};
-\code{wrapLongitude} must be logical; and \code{locationLabelProps} follows
+\code{wrapLongitude} must be logical; \code{scaleLock} accepts a logical
+or a list with \code{enabled} and optional locked \code{domains}; and
+\code{locationLabelProps} follows
 \code{flow_location_label_props} in \code{add_flowmap()}.
 Standalone overlays also update canvas clear effects and CSS compositing
 when \code{blendingMode} changes.
