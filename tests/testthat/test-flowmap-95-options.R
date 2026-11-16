@@ -91,10 +91,10 @@ test_that("FlowmapGL standalone blending configures canvas clearing and supports
   )
   locations <- data.frame(
     id = c("a", "b"), name = c("East", "West"),
-    lat = c(0, 0), lon = c(179, -179)
+    lat = c(40.75, 40.75), lon = c(-74.01, -73.98)
   )
   flows <- data.frame(origin = "a", dest = "b", count = 3)
-  map <- maplibre(style = blank_style, center = c(179, 0), zoom = 3) |>
+  map <- maplibre(style = blank_style, center = c(-73.98, 40.75), zoom = 11) |>
     add_flowmap(
       id = "flows", locations = locations, flows = flows,
       flow_blending_mode = "non-accumulating",
@@ -148,7 +148,11 @@ test_that("FlowmapGL standalone blending configures canvas clearing and supports
   if (!ready) {
     diagnostic <- tryCatch(js(
       "var e=document.querySelector('.html-widget'),m=e?.map;
-       return {widget:!!e,map:!!m,bundle:typeof window.FlowmapGL,
+       return {widget:!!e,map:!!m,body:e?.innerText?.slice(0,700),
+         readyState:document.readyState,
+         maplibre:typeof window.maplibregl,
+         widgets:typeof window.HTMLWidgets,
+         bundle:typeof window.FlowmapGL,
          canvasHelpers:window.FlowmapGL && [
            typeof window.FlowmapGL.getFlowmapCanvasEffects,
            typeof window.FlowmapGL.getFlowmapCanvasStyle
