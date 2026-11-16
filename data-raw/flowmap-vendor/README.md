@@ -24,7 +24,7 @@ for example after:
 
 - changing a pinned npm package version in `package.json`
 - changing the FlowmapGL bundle entry point in `entry.js`
-- changing a patch under `patches/`
+- changing the patch script under `scripts/`
 - changing metadata or notice generation in `scripts/generate-vendor-metadata.mjs`
 - refreshing the npm lockfile intentionally
 
@@ -35,8 +35,7 @@ data-raw/flowmap-vendor/build-flowmap.sh build
 data-raw/flowmap-vendor/build-flowmap.sh check
 ```
 
-The build command runs `npm ci`, applies every `patches/*.patch` with
-`git apply --check` first, bundles `entry.js` with esbuild, and writes only the
+The build command runs `npm ci`, applies the checked temporal-scale extension with assertion-checked\n`node scripts/patch-flowmap-temporal-scale-domain.mjs`, bundles `entry.js` with esbuild, and writes only the
 minified runtime bundle and metadata:
 
 - `inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js`
@@ -57,11 +56,11 @@ The normal supported source for FlowmapGL is the npm release pinned in
 integrity values, npm `gitHead` values where available, and the SHA256 of the
 generated browser bundle.
 
-## Local FlowmapGL Patch
+## Local FlowmapGL Extension
 
-mapgl adds `flow_temporal_scale_domain` for temporal flowmaps. FlowmapGL 9.4.0
+mapgl adds `flow_temporal_scale_domain` for temporal flowmaps. FlowmapGL 9.5.0
 adds scale-lock controls, but those lock the current scale domains. mapgl still
-carries `patches/flowmap-temporal-scale-domain.patch` so temporal flowmaps can
+carries `scripts/patch-flowmap-temporal-scale-domain.mjs` so temporal flowmaps can
 choose between selected-time domains and all-time domains.
 
 `adaptiveScalesEnabled` remains spatial: when enabled, scale domains are limited
@@ -71,12 +70,12 @@ temporal: `"selected"` uses selected-time flows for width/color domains and
 
 ## Patch Failures
 
-If patch application fails after bumping FlowmapGL, inspect upstream for native
+If the compiled-ESM patch fails after bumping FlowmapGL, inspect upstream for native
 temporal scale-domain support.
 
 - If upstream supports it, remove the local patch and wire mapgl to the upstream
   prop.
-- If upstream does not support it, rebase the patch against the new
+- If upstream does not support it, rebase the assertion-checked script against the new
   `FlowmapSelectors` and `FlowmapLayer` internals.
 
 The acceptance invariant is: rendered flows may remain time-filtered, but
