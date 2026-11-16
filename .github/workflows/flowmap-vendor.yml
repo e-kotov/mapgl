@@ -11,6 +11,10 @@ on:
       - '.github/workflows/flowmap-vendor.yml'
   workflow_dispatch:
 
+concurrency:
+  group: flowmap-vendor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   vendor:
     name: Check pinned FlowmapGL vendor bundle
