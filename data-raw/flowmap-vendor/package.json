@@ -15,9 +15,9 @@
     "@deck.gl/mapbox": "9.4.1",
     "@flowmap.gl/data": "9.5.0",
     "@flowmap.gl/layers": "9.5.0",
-    "@luma.gl/core": "9.4.0",
-    "@luma.gl/engine": "9.4.0",
-    "@luma.gl/shadertools": "9.4.0",
+    "@luma.gl/core": "9.4.2",
+    "@luma.gl/engine": "9.4.2",
+    "@luma.gl/shadertools": "9.4.2",
     "esbuild": "0.28.0",
     "@deck.gl/extensions": "9.4.1"
   }
