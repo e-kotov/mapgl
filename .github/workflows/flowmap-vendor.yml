@@ -36,6 +36,21 @@ jobs:
             const version = lock.packages['node_modules/' + name].version;
             if (version !== pinned[name]) throw new Error(`${name}: expected ${pinned[name]}, found ${version}`);
           }
+          // Mixed luma versions create multiple GPU/device/shader implementations.
+          // Deck.gl 9.4.1 uses luma >=9.4.2: a root 9.4.0 pin used to
+          // install a nested 9.4.2 copy and broke FlowmapGL picking.
+          const lumaVersion = pinned['@luma.gl/core'];
+          const luma = Object.entries(lock.packages).filter(([path]) =>
+            path.includes('node_modules/@luma.gl/'));
+          if (!luma.length) throw new Error('No luma.gl packages found in lockfile');
+          for (const [path, info] of luma) {
+            if (path.split('node_modules/').length !== 2) {
+              throw new Error('Duplicate nested luma.gl dependency: ' + path);
+            }
+            if (info.version !== lumaVersion) {
+              throw new Error('Mixed luma.gl versions: ' + path + ' @' + info.version);
+            }
+          }
           JS
       - name: Rebuild vendor assets and validate committed outputs
         run: |
