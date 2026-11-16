@@ -9,8 +9,8 @@
   },
   "bundle": {
     "path": "inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js",
-    "sha256": "36d2517352b41a76f9019a18385c0f4102e46ce305e01ca830b07765fbfc0026",
-    "bytes": 1226022
+    "sha256": "61492a7cfaea93d38964b23d39f723083974222f1e51998a524e8d3fbbbf848a",
+    "bytes": 1226550
   },
   "patches": [
     {
