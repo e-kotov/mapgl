@@ -134,11 +134,33 @@ test_that("FlowmapGL standalone blending configures canvas clearing and supports
       Sys.sleep(0.25)
     }
   }
+  b$Page$addScriptToEvaluateOnNewDocument(source = paste0(
+    "window._flowmapDebugErrors=[];",
+    "window.addEventListener('error',e=>window._flowmapDebugErrors.push(e.message+' '+(e.error?.stack||'')));",
+    "window.addEventListener('unhandledrejection',e=>window._flowmapDebugErrors.push(String(e.reason)));",
+    "const orig=console.error;console.error=function(...args){window._flowmapDebugErrors.push(args.join(' '));orig.apply(console,args);};"
+  ))
   b$Page$navigate(paste0("file://", path))
-  expect_true(wait_for(
+  ready <- wait_for(
     "var m=document.querySelector('.html-widget')?.map;
      return !!(m && m._deckgl && m._mapglFlowmapLayers?.[0]?.state?.dataProvider);"
-  ))
+  )
+  if (!ready) {
+    diagnostic <- tryCatch(js(
+      "var e=document.querySelector('.html-widget'),m=e?.map;
+       return {widget:!!e,map:!!m,bundle:typeof window.FlowmapGL,
+         canvasHelpers:window.FlowmapGL && [
+           typeof window.FlowmapGL.getFlowmapCanvasEffects,
+           typeof window.FlowmapGL.getFlowmapCanvasStyle
+         ],
+         deck:!!m?._deckgl,layers:m?._mapglFlowmapLayers?.map(l=>({
+           id:l.id,hasState:!!l.state,hasProvider:!!l.state?.dataProvider
+         })),errors:window._flowmapDebugErrors||[]};"
+    ), error = function(e) list(evaluationError = conditionMessage(e)))
+    stop(paste("FlowmapGL 9.5 failed to initialize:", jsonlite::toJSON(
+      diagnostic, auto_unbox = TRUE
+    )))
+  }
   initial <- js(
     "var m=document.querySelector('.html-widget').map;
      var p=m._mapglFlowmapLayers[0].props;
