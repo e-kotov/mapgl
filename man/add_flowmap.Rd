@@ -14,15 +14,12 @@ add_flowmap(
   flow_opacity = 1,
   flow_dark_mode = "auto",
   flow_blend = "auto",
-  flow_blending_mode = c("normal", "non-accumulating"),
   flow_fade_amount = 50,
   flow_highlight_color = "#ff9b29",
   flow_locations_enabled = TRUE,
   flow_location_totals_enabled = TRUE,
   flow_location_labels_enabled = FALSE,
-  flow_location_label_props = NULL,
   flow_lines_rendering_mode = c("straight", "animated-straight", "curved"),
-  flow_wrap_longitude = FALSE,
   flow_line_thickness_scale = 1,
   flow_line_curviness = 1,
   flow_clustering_enabled = TRUE,
@@ -47,7 +44,10 @@ add_flowmap(
   flow_spotlight_mode = c("spotlight", "grayscale", "brighten"),
   visibility = c("visible", "none"),
   before_id = NULL,
-  slot = NULL
+  slot = NULL,
+  flow_blending_mode = c("normal", "non-accumulating"),
+  flow_location_label_props = NULL,
+  flow_wrap_longitude = FALSE
 )
 }
 \arguments{
