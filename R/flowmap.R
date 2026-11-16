@@ -393,6 +393,14 @@ add_flowmap <- function(
   flow_location_label_column <- flowmap_validate_optional_string(
     flow_location_label_column, "flow_location_label_column"
   )
+  if (length(map$x$flowmaps) > 0L) {
+    projections <- vapply(map$x$flowmaps, function(x) {
+      x$settings$flowProjection %||% "map"
+    }, character(1))
+    if (any(projections != flow_projection)) {
+      rlang::abort("A single map cannot mix flat and globe FlowmapGL views.")
+    }
+  }
   flow_view_id <- flowmap_validate_optional_string(flow_view_id, "flow_view_id")
   if (identical(flow_projection, "globe") && !identical(map$x$projection, "globe")) {
     rlang::abort("`flow_projection = 'globe'` requires a map with `projection = 'globe'`.")
@@ -1000,7 +1008,10 @@ flowmap_normalize_time_ranges <- function(value, arg = "flow_selected_time_range
       ordered <- as.numeric(as.POSIXct(window))
     } else if (is.character(window)) {
       interval <- as.character(window)
-      ordered <- suppressWarnings(as.numeric(as.POSIXct(interval, tz = "UTC")))
+      ordered <- tryCatch(
+        suppressWarnings(as.numeric(as.POSIXct(interval, tz = "UTC"))),
+        error = function(e) c(NA_real_, NA_real_)
+      )
     } else {
       interval <- unname(window)
       ordered <- as.numeric(window)
