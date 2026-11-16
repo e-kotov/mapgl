@@ -1284,7 +1284,7 @@ window.MapGLFlowmapPlugin = (function () {
     const sourceLayer = (map._mapglFlowmapLayers || []).find(function (layer) {
       return layer._mapglCanonicalId === flowmapId && layer.state;
     });
-    // FlowmapGL 9.4.0 does not expose these provider/cluster accessors as a
+    // FlowmapGL 9.5.0 does not expose these provider/cluster accessors as a
     // public FlowmapLayer API. Keep this compatibility boundary in one place:
     // the spotlight overlay needs the canonical layer's cluster membership
     // and flow ID accessors.
@@ -1565,7 +1565,7 @@ window.MapGLFlowmapPlugin = (function () {
             !contextLayer || !contextLayer.state || typeof contextLayer.setState !== "function") {
           return;
         }
-        // FlowmapGL 9.4.0's location-ring state uses this internal shape.
+        // FlowmapGL 9.5.0's location-ring state uses this internal shape.
         contextLayer.setState({
           highlightedObject: {
             type: "location",
