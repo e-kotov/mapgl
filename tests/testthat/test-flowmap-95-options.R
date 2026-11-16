@@ -1,5 +1,23 @@
 # FlowmapGL 9.5 public R controls and the standalone Deck canvas contract.
 
+test_that("FlowmapGL 9.5 options preserve legacy positional calls", {
+  locations <- data.frame(
+    id = c("a", "b"), lat = c(0, 1), lon = c(0, 1)
+  )
+  flows <- data.frame(origin = "a", dest = "b", count = 3)
+  # Pre-9.5 positional order: map, id, locations, flows, colorScheme,
+  # opacity, darkMode, CSS blend. Adding options must not shift it.
+  map <- do.call(add_flowmap, list(
+    maplibre(), "legacy", locations, flows, "Teal", 0.8, FALSE, FALSE
+  ))
+  settings <- map$x$flowmaps[[1L]]$settings
+  expect_equal(settings$opacity, 0.8)
+  expect_false(settings$darkMode)
+  expect_false(settings$flowBlend)
+  expect_identical(settings$blendingMode, "normal")
+  expect_false(settings$wrapLongitude)
+})
+
 test_that("FlowmapGL 9.5 controls serialize with safe defaults and CSS colors", {
   locations <- data.frame(id = c("a", "b"), name = c("East", "West"),
                           lat = c(0, 0), lon = c(179, -179))
