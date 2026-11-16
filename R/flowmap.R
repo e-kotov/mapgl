@@ -939,6 +939,101 @@ flowmap_validate_choice <- function(value, arg, choices) {
   value
 }
 
+# This is a serializable subset of FlowmapGL's label TextLayer props.
+# Never pass JS callbacks, data, custom extensions, or update triggers from R.
+flowmap_normalize_location_label_props <- function(
+  value,
+  arg = "flow_location_label_props"
+) {
+  if (is.null(value)) return(NULL)
+  if (!is.list(value) || is.data.frame(value)) {
+    rlang::abort(paste0("`", arg, "` must be a named list or NULL."))
+  }
+  if (length(value) == 0L) return(NULL)
+  keys <- names(value)
+  if (is.null(keys) || anyNA(keys) || any(!nzchar(keys)) || anyDuplicated(keys)) {
+    rlang::abort(paste0("`", arg, "` must have unique non-empty names."))
+  }
+  allowed <- c(
+    "getSize", "getColor", "fontFamily", "outlineColor", "outlineWidth",
+    "background", "backgroundColor", "backgroundPadding", "collisionEnabled",
+    "maxWidth", "wordBreak", "lineHeight", "sizeScale", "getTextAnchor",
+    "getAlignmentBaseline", "getAngle", "getPixelOffset"
+  )
+  unknown <- setdiff(keys, allowed)
+  if (length(unknown)) {
+    rlang::abort(paste0(
+      "Unsupported `", arg, "` field(s): ", paste(unknown, collapse = ", "),
+      ". JavaScript callbacks and custom accessors are not supported."
+    ))
+  }
+  for (key in keys) {
+    item <- value[[key]]
+    field <- paste0(arg, "$", key)
+    if (key %in% c("getColor", "outlineColor", "backgroundColor")) {
+      value[[key]] <- flowmap_normalize_label_color(item, field)
+    } else if (key %in% c("background", "collisionEnabled")) {
+      flowmap_validate_logical(item, field)
+    } else if (key %in% c(
+      "getSize", "outlineWidth", "maxWidth", "lineHeight", "sizeScale", "getAngle"
+    )) {
+      positive <- key %in% c("getSize", "maxWidth", "lineHeight", "sizeScale")
+      nonnegative <- key == "outlineWidth"
+      if (!is.numeric(item) || length(item) != 1L ||
+          !is.finite(item) || (positive && item <= 0) ||
+          (nonnegative && item < 0)) {
+        rlang::abort(paste0(
+          "`", field, "` must be a finite ",
+          if (positive) "positive" else if (nonnegative) "non-negative" else "numeric",
+          " scalar."
+        ))
+      }
+    } else if (key %in% c("getPixelOffset", "backgroundPadding")) {
+      expected <- if (key == "getPixelOffset") 2L else 4L
+      if (!is.numeric(item) || length(item) != expected ||
+          any(!is.finite(item)) ||
+          (key == "backgroundPadding" && any(item < 0))) {
+        rlang::abort(paste0(
+          "`", field, "` must be a finite numeric vector of length ",
+          expected, "."
+        ))
+      }
+    } else if (key == "fontFamily") {
+      if (!is.character(item) || length(item) != 1L ||
+          is.na(item) || !nzchar(trimws(item))) {
+        rlang::abort(paste0("`", field, "` must be a non-empty string."))
+      }
+    } else if (key %in% c("wordBreak", "getTextAnchor", "getAlignmentBaseline")) {
+      choices <- switch(key,
+        wordBreak = c("break-word", "break-all"),
+        getTextAnchor = c("start", "middle", "end"),
+        getAlignmentBaseline = c("top", "center", "bottom", "baseline")
+      )
+      flowmap_validate_choice(item, field, choices)
+    }
+  }
+  value
+}
+
+flowmap_normalize_label_color <- function(value, arg) {
+  if (is.character(value) && length(value) == 1L && !is.na(value)) {
+    rgba <- tryCatch(
+      grDevices::col2rgb(value, alpha = TRUE),
+      error = function(e) NULL
+    )
+    if (is.null(rgba)) {
+      rlang::abort(paste0("`", arg, "` must be a CSS color or RGB(A) byte vector."))
+    }
+    return(unname(as.integer(rgba[, 1L])))
+  }
+  if (!is.numeric(value) || !length(value) %in% c(3L, 4L) ||
+      any(!is.finite(value)) || any(value < 0 | value > 255) ||
+      any(value != floor(value))) {
+    rlang::abort(paste0("`", arg, "` must be a CSS color or RGB(A) byte vector."))
+  }
+  unname(as.integer(if (length(value) == 3L) c(value, 255L) else value))
+}
+
 flowmap_validate_single_string <- function(value, arg) {
   if (!is.character(value) || length(value) != 1 || is.na(value)) {
     rlang::abort(paste0("`", arg, "` must be a single string."))
