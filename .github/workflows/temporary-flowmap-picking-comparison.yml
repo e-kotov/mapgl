@@ -1,0 +1,41 @@
+name: Temporary FlowmapGL 9.4 versus 9.5 picking comparison
+on:
+  push:
+    branches:
+      - chore/flowmap-gl-9.5.0-vendor
+jobs:
+  compare-picking:
+    if: contains(github.event.head_commit.message, '[picking-baseline]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        ref:
+          - main
+          - chore/flowmap-gl-9.5.0-vendor
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+      - name: Install system libraries and browser
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgdal-dev libgeos-dev libproj-dev libudunits2-dev libcurl4-openssl-dev libssl-dev libxml2-dev
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+      - name: Choose browser
+        run: echo "CHROMOTE_CHROME=${{ steps.chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        run: |
+          Rscript -e 'install.packages("pak", repos="https://cloud.r-project.org")'
+          Rscript -e 'pak::pak(c("local::.", "chromote", "testthat"))'
+      - name: Run identical test on checked-out ref
+        shell: bash
+        run: |
+          echo "Testing branch ${{ matrix.ref }} at $(git rev-parse HEAD)"
+          Rscript -e 'chromote::set_chrome_args(c(chromote::get_chrome_args(), "--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader-webgl")); testthat::test_local(filter="flowmap", reporter="summary")'
