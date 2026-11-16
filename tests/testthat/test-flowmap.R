@@ -182,6 +182,39 @@ test_that("flowmap click and node hover interactions work in a browser", {
   )
   if (!map_ready) skip("Flowmap did not initialize in the headless browser")
 
+  # Temporary diagnostic: inspect actual rendered deck.gl sublayers and
+  # whether their GPU models exist before the first picking assertion.
+  gpu_probe <- tryCatch(js_value(
+    "var m=document.querySelector('.html-widget').map,d=m._deckgl;
+     var p=m.project([-74.01,40.75]);
+     var ls=d.layerManager?.getLayers?.()||[];
+     var ld=m._mapglFlowmapLayers?.[0]?.state?.layersData||{};
+     var circle=ld.circleAttributes||{},line=ld.lineAttributes||{};
+     var toDesc=o=>Object.fromEntries(Object.entries(o||{}).map(([k,v])=>[k, {
+       type:v?.constructor?.name,length:v?.length??v?.byteLength??null,
+       keys:v&&typeof v==='object'?Object.keys(v).slice(0,8):[]
+     }]));
+     return {p,deckParameters:d.props.parameters||null,
+       layerCount:ls.length,
+       layers:ls.map(l=>({
+         id:l.id,name:l.constructor?.name,pickable:l.props.pickable,
+         visible:l.props.visible,opacity:l.props.opacity,
+         nData:l.props.data?.length,initialized:!!l.internalState,
+         hasModel:!!l.state?.model,modelId:l.state?.model?.id,
+         positionAttribute:l.getAttributeManager?.()?.getAttributes?.()?.instancePositions?.value?.length,
+         pickedInfo:l.getPickingInfo?.({info:{index:0,layer:l}})?.index
+       })),
+       cir:toDesc(circle),lin:toDesc(line),
+       viewport:d.getViewports().map(v=>({id:v.id,w:v.width,h:v.height})),
+       picks:[0,3,10,30].map(radius=>({
+         radius,hit:(()=>{try{var x=d.pickObject({x:p.x,y:p.y,radius});return x&&{id:x.layer?.id,index:x.index};}catch(e){return {error:String(e)}}})()
+       }))
+     };"
+  ), error = function(e) list(error = conditionMessage(e)))
+  message("FLOWMAP_PICK_DEBUG ", jsonlite::toJSON(
+    gpu_probe, auto_unbox = TRUE, null = "null"
+  ))
+
   click_location(-74.01)
   expect_true(wait_for(
     "var selected=document.querySelector('.html-widget').map._flowmapSelectedLocations.flows;
