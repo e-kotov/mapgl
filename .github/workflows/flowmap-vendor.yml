@@ -1,0 +1,70 @@
+name: FlowmapGL vendoring and browser integration
+
+on:
+  pull_request:
+    paths:
+      - 'data-raw/flowmap-vendor/**'
+      - 'inst/htmlwidgets/lib/flowmap-gl/**'
+      - 'inst/htmlwidgets/flowmap.js'
+      - 'R/flowmap.R'
+      - 'tests/testthat/test-flowmap*.R'
+      - '.github/workflows/flowmap-vendor.yml'
+  workflow_dispatch:
+
+jobs:
+  vendor:
+    name: Check pinned FlowmapGL vendor bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - name: Check locked package versions
+        working-directory: data-raw/flowmap-vendor
+        run: |
+          npm ci --ignore-scripts
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const pinned = JSON.parse(fs.readFileSync('package.json', 'utf8')).dependencies;
+          for (const name of ['@flowmap.gl/data', '@flowmap.gl/layers']) {
+            const version = lock.packages['node_modules/' + name].version;
+            if (version !== pinned[name]) throw new Error(`${name}: expected ${pinned[name]}, found ${version}`);
+          }
+          JS
+      - name: Rebuild vendor assets and validate committed outputs
+        run: |
+          data-raw/flowmap-vendor/build-flowmap.sh check
+      - name: Test temporal scale domains and disjoint time intervals
+        working-directory: data-raw/flowmap-vendor
+        run: node scripts/test-temporal-scale-domain.mjs
+      - name: Ensure no unexpected workspace changes
+        run: git diff --exit-code -- data-raw/flowmap-vendor/package-lock.json LICENSE.note inst/htmlwidgets/lib/flowmap-gl
+
+  r-flowmap:
+    name: FlowmapGL R and Chromium regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgdal-dev libgeos-dev libproj-dev libudunits2-dev \
+            libcurl4-openssl-dev libssl-dev libxml2-dev
+      - name: Setup Chromium
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+      - name: Set Chromium executable
+        run: echo "CHROMOTE_CHROME=${{ steps.chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
+      - name: Install mapgl, testthat and chromote
+        run: |
+          Rscript -e 'install.packages("pak", repos="https://cloud.r-project.org")'
+          Rscript -e 'pak::pak(c("local::.", "chromote", "testthat"))'
+      - name: Run flowmap regression tests
+        run: Rscript -e 'testthat::test_local(filter="flowmap", reporter="summary")'
