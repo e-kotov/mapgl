@@ -31,3 +31,54 @@ jobs:
           done
           npm view @deck.gl/extensions@9.4.1 version
           npm view @luma.gl/core@9.4.0 version
+          npm view @deck.gl/mapbox@9.4.0 version
+          npm view @deck.gl/core@9.4.0 version
+          npm view @deck.gl/layers@9.4.0 version
+
+  inspect-compiled:
+    name: Inspect compiled upstream API for patch port
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked upstream runtime dependencies
+        working-directory: data-raw/flowmap-vendor
+        run: |
+          npm install --package-lock-only --ignore-scripts
+          npm ci --ignore-scripts
+      - name: Print patch locations
+        working-directory: data-raw/flowmap-vendor
+        run: |
+          for path in \
+            node_modules/@flowmap.gl/data/dist/FlowmapSelectors.js \
+            node_modules/@flowmap.gl/data/dist/FlowmapState.d.ts \
+            node_modules/@flowmap.gl/layers/dist/FlowmapLayer.js \
+            node_modules/@flowmap.gl/layers/dist/FlowmapLayer.d.ts; do
+            echo "::group::$path"
+            grep -nE 'getSelectedTimeRange|getSortedFlowsForKnownLocationsFilteredByTime|getSortedAggregatedFilteredFlows|_getFlowMagnitudeExtent|_getAdaptiveFlowMagnitudeExtent|getCurrentFlowMagnitudeExtent|_getSettingsState|adaptiveScalesEnabled|highlightColor|_getFlowmapState' "$path" | head -85 || true
+            echo "::endgroup::"
+          done
+      - name: Show compiled selector context
+        working-directory: data-raw/flowmap-vendor
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          for (const [file, patterns] of [
+            ['node_modules/@flowmap.gl/data/dist/FlowmapSelectors.js', [
+              'this.getSelectedTimeRange =', 'this.getSortedFlowsForKnownLocationsFilteredByTime =',
+              'this.getSortedAggregatedFilteredFlows =', 'this._getFlowMagnitudeExtent =',
+              'this._getAdaptiveFlowMagnitudeExtent =']],
+            ['node_modules/@flowmap.gl/layers/dist/FlowmapLayer.js', [
+              "    'highlightColor',", '_getSettingsState(', '    adaptiveScalesEnabled: true,']]
+          ]) {
+            const lines = fs.readFileSync(file, 'utf8').split('\n');
+            console.log('FILE '+file+' total '+lines.length);
+            for(const pattern of patterns) {
+              const i=lines.findIndex(line=>line.includes(pattern));
+              console.log('---- '+pattern+' line '+(i+1));
+              if(i>=0) console.log(lines.slice(Math.max(0,i-4),Math.min(lines.length,i+35)).map((l,j)=>(Math.max(0,i-4)+j+1)+': '+l).join('\n'));
+            }
+          }
+          JS
