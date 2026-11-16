@@ -662,6 +662,36 @@ window.MapGLFlowmapPlugin = (function () {
     return [10, 10];
   }
 
+  // A standalone Deck canvas must use FlowmapGL's frame-level clear effect
+  // and its matching CSS compositing for non-accumulating GPU blending.
+  // The overlay canvas is shared: use the first visible flowmap's settings.
+  function applyStandaloneFlowmapCanvasSettings(map, settings) {
+    const canvas = map._deckCanvas;
+    if (!canvas) return;
+    const props = {
+      blendingMode: settings.blendingMode || "normal",
+      darkMode: Boolean(settings.darkMode)
+    };
+
+    if (props.blendingMode === "non-accumulating") {
+      canvas.style.mixBlendMode = FlowmapGL.getFlowmapCanvasStyle(props).mixBlendMode;
+    } else if (settings.flowBlend) {
+      canvas.style.mixBlendMode = typeof settings.flowBlend === "string"
+        ? settings.flowBlend
+        : (props.darkMode ? "screen" : "multiply");
+    } else {
+      canvas.style.mixBlendMode = "";
+    }
+
+    const key = props.blendingMode + ":" + props.darkMode;
+    if (map._deckgl && map._flowmapCanvasModeKey !== key) {
+      map._deckgl.setProps({
+        effects: FlowmapGL.getFlowmapCanvasEffects(props)
+      });
+      map._flowmapCanvasModeKey = key;
+    }
+  }
+
   function ensureOverlay(map, interleaved, elId, settings) {
     if (typeof FlowmapGL === "undefined") {
       console.error("FlowmapGL is not loaded. Cannot add flowmap layers.");
@@ -705,6 +735,7 @@ window.MapGLFlowmapPlugin = (function () {
       map.addControl(overlay);
       map._mapglFlowmapOverlay = overlay;
       map._mapglFlowmapOverlayInterleaved = true;
+      map._flowmapCanvasModeKey = null;
 
       map.once("remove", function () {
         map._mapglFlowmapOverlay = null;
@@ -720,21 +751,8 @@ window.MapGLFlowmapPlugin = (function () {
         map._deckgl &&
         map._mapglFlowmapOverlayInterleaved === false
       ) {
-        // Update blending styles on the existing canvas during widget updates
-        // NOTE: blend must go on the canvas, not the container, to avoid
-        // stacking-context isolation that prevents cross-element blending.
-        const deckCanvas = map._deckCanvas;
-        if (deckCanvas) {
-          if (settings && settings.flowBlend) {
-            if (typeof settings.flowBlend === "string") {
-              deckCanvas.style.mixBlendMode = settings.flowBlend;
-            } else {
-              deckCanvas.style.mixBlendMode = settings.darkMode ? "screen" : "multiply";
-            }
-          } else {
-            deckCanvas.style.mixBlendMode = "";
-          }
-        }
+        // Reconfigure CSS compositing and frame effects when a widget updates.
+        applyStandaloneFlowmapCanvasSettings(map, settings || {});
         return map._deckgl;
       }
 
@@ -980,19 +998,9 @@ window.MapGLFlowmapPlugin = (function () {
       map._deckgl = deckInstance;
       map._mapglFlowmapOverlayInterleaved = false;
 
-      // Apply CSS Blending directly to the canvas element.
-      // IMPORTANT: The container must NOT have a z-index (other than auto)
-      // because that creates a stacking context which isolates the canvas
-      // and prevents mix-blend-mode from blending with the underlying map.
-      if (settings && settings.flowBlend) {
-        if (typeof settings.flowBlend === "string") {
-          deckCanvas.style.mixBlendMode = settings.flowBlend;
-        } else {
-          deckCanvas.style.mixBlendMode = settings.darkMode ? "screen" : "multiply";
-        }
-      } else {
-        deckCanvas.style.mixBlendMode = "";
-      }
+      // Keep the canvas outside a z-index stacking context so CSS blending
+      // combines it with the underlying MapLibre/Mapbox basemap.
+      applyStandaloneFlowmapCanvasSettings(map, settings || {});
 
       map.once("remove", function () {
         if (map._deckgl) {
@@ -1094,6 +1102,7 @@ window.MapGLFlowmapPlugin = (function () {
       pickable: isPickable,
       visible: config.visibility !== "none",
       opacity: settings.opacity == null ? 1 : settings.opacity,
+      blendingMode: settings.blendingMode || "normal",
       colorScheme: settings.colorScheme,
       darkMode: settings.darkMode,
       fadeAmount: settings.fadeAmount,
@@ -1101,7 +1110,9 @@ window.MapGLFlowmapPlugin = (function () {
       locationsEnabled: settings.locationsEnabled,
       locationTotalsEnabled: settings.locationTotalsEnabled,
       locationLabelsEnabled: settings.locationLabelsEnabled,
+      locationLabelProps: settings.locationLabelProps || undefined,
       flowLinesRenderingMode: settings.flowLinesRenderingMode,
+      wrapLongitude: Boolean(settings.wrapLongitude),
       flowLineThicknessScale: settings.flowLineThicknessScale == null ? 1 : settings.flowLineThicknessScale,
       flowLineCurviness: settings.flowLineCurviness == null ? 1 : settings.flowLineCurviness,
       clusteringEnabled: settings.clusteringEnabled,
@@ -1414,6 +1425,13 @@ window.MapGLFlowmapPlugin = (function () {
 
   function redrawFlowmaps(map, HTMLWidgets) {
     if (!map._flowmapsConfig) return;
+    if (map._deckgl && map._mapglFlowmapOverlayInterleaved === false) {
+      const firstVisible = map._flowmapsConfig.find(function (config) {
+        return config.visibility !== "none";
+      });
+      const canvasConfig = firstVisible || map._flowmapsConfig[0];
+      applyStandaloneFlowmapCanvasSettings(map, (canvasConfig && canvasConfig.settings) || {});
+    }
     const HTMLWidgetsInstance = HTMLWidgets || map._flowmapHTMLWidgets;
     const layers = [];
 
