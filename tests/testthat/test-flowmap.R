@@ -265,6 +265,53 @@ test_that("flowmap click and node hover interactions work in a browser", {
   message("FLOWMAP_RENDER_DEBUG ", jsonlite::toJSON(
     render_probe, auto_unbox = TRUE, null = "null"
   ))
+  # Temporary diagnostic: inspect raw offscreen picking pixels and errors.
+  gpu_pixel_probe <- tryCatch(js_value(
+    "var m=document.querySelector('.html-widget').map,d=m._deckgl;
+     var p=m.project([-74.01,40.75]),picker=d.deckPicker;
+     var reads=[],errors=[],err=null,original=picker._drawAndSample;
+     var prevError=d.props.onError;
+     d.setProps({onError:function(e){errors.push(e?.message||String(e));}});
+     picker._drawAndSample=function(opts,z){
+       var result=original.call(this,opts,z),buf=result.pickedColors;
+       var nonzero=0,nonzeroAlpha=0,maxAlpha=0,samples=[];
+       for(var i=0;i<buf.length;i+=4){
+         if(buf[i]||buf[i+1]||buf[i+2]||buf[i+3]){
+           nonzero++;
+           if(samples.length<6)samples.push(Array.from(buf.slice(i,i+4)));
+         }
+         if(buf[i+3])nonzeroAlpha++;
+         maxAlpha=Math.max(maxAlpha,buf[i+3]);
+       }
+       reads.push({w:opts.deviceRect?.width,h:opts.deviceRect?.height,
+         len:buf.length,nonzero,nonzeroAlpha,maxAlpha,samples});
+       return result;
+     };
+     var redrawResult=null,hit=null;
+     try{
+       if(d.redraw)redrawResult=d.redraw(true);
+       hit=d.pickObject({x:p.x,y:p.y,radius:20});
+       if(d.pickObjectAsync){
+         window._mapglAsyncPick={state:'pending'};
+         d.pickObjectAsync({x:p.x,y:p.y,radius:20})
+           .then(x=>window._mapglAsyncPick={
+             state:'done',hit:x&&{id:x.layer?.id,index:x.index}
+           }).catch(e=>window._mapglAsyncPick={
+             state:'error',message:String(e)
+           });
+       }
+     }catch(e){err=String(e);}
+     finally{picker._drawAndSample=original;d.setProps({onError:prevError});}
+     return {reads,errors,redrawResult,hit:hit&&{id:hit.layer?.id,index:hit.index},err};"
+  ), error = function(e) list(error = conditionMessage(e)))
+  Sys.sleep(1)
+  gpu_async_probe <- tryCatch(js_value(
+    "return window._mapglAsyncPick||null;"
+  ), error = function(e) list(error = conditionMessage(e)))
+  message("FLOWMAP_PIXEL_DEBUG ", jsonlite::toJSON(
+    list(sync = gpu_pixel_probe, async = gpu_async_probe),
+    auto_unbox = TRUE, null = "null"
+  ))
   click_location(-74.01)
   expect_true(wait_for(
     "var selected=document.querySelector('.html-widget').map._flowmapSelectedLocations.flows;
