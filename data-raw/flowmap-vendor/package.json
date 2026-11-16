@@ -10,14 +10,15 @@
     "check": "./build-flowmap.sh check"
   },
   "dependencies": {
-    "@deck.gl/core": "9.3.2",
-    "@deck.gl/layers": "9.3.2",
-    "@deck.gl/mapbox": "9.3.2",
-    "@flowmap.gl/data": "9.4.0",
-    "@flowmap.gl/layers": "9.4.0",
-    "@luma.gl/core": "9.3.3",
-    "@luma.gl/engine": "9.3.3",
-    "@luma.gl/shadertools": "9.3.3",
-    "esbuild": "0.28.0"
+    "@deck.gl/core": "9.4.0",
+    "@deck.gl/layers": "9.4.0",
+    "@deck.gl/mapbox": "9.4.0",
+    "@flowmap.gl/data": "9.5.0",
+    "@flowmap.gl/layers": "9.5.0",
+    "@luma.gl/core": "9.4.0",
+    "@luma.gl/engine": "9.4.0",
+    "@luma.gl/shadertools": "9.4.0",
+    "esbuild": "0.28.0",
+    "@deck.gl/extensions": "9.4.1"
   }
 }
