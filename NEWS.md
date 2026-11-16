@@ -9,7 +9,7 @@
 
 * Flowmap time-range and location-filter updates now reuse the cached data provider instead of rebuilding it. Click-to-filter also respects `flow_location_filter_mode`, and a single selected location is passed to FlowmapGL as a one-element array.
 
-* Upgrade the bundled FlowmapGL runtime to 9.5.0 and deck.gl 9.4.1, preserving the custom `flow_temporal_scale_domain` extension via a rebased standard patch. The bundle also includes upstream rendering, clustering, picking, antimeridian and location-label fixes. The reproducible build and R/browser checks cover the upgrade.
+* Upgrade the bundled FlowmapGL runtime to 9.5.0, deck.gl 9.4.1, and a **single shared luma.gl 9.4.2 dependency tree**. This avoids the previous duplicate luma.gl 9.4.0/9.4.2 installations that broke GPU picking. Preserve the custom `flow_temporal_scale_domain` extension via a rebased standard patch. The bundle also includes upstream rendering, clustering, picking, antimeridian and location-label fixes. The reproducible build and R/browser checks cover the upgrade.
 
 * `add_flowmap()` adds `flow_wrap_longitude` to opt into shortest antimeridian routes, `flow_blending_mode` for GPU `"non-accumulating"` flow rendering, and `flow_location_label_props` for validated TextLayer styling (font, color, outline, background and collision filtering). Standalone overlays automatically set the matching canvas clear effect and CSS blend for the GPU mode. `set_flowmap_settings()` accepts the corresponding dynamic settings `wrapLongitude`, `blendingMode`, and `locationLabelProps`. Defaults remain unchanged; custom JavaScript label callbacks are not supported.
 
