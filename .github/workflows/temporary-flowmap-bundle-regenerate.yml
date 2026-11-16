@@ -31,3 +31,4 @@ jobs:
             git commit -m 'build(flowmap): rebuild 9.5 browser bundle with canvas helper exports'
             git push origin HEAD:chore/flowmap-gl-9.5.0-vendor
           fi
+# Rebuild trigger
