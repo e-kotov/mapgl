@@ -46,8 +46,8 @@ jobs:
       - name: Install locked upstream runtime dependencies
         working-directory: data-raw/flowmap-vendor
         run: |
-          npm install --package-lock-only --ignore-scripts
-          npm ci --ignore-scripts
+          npm install --package-lock-only --ignore-scripts --loglevel=warn || { tail -100 ~/.npm/_logs/*-debug-0.log; exit 1; }
+          npm ci --ignore-scripts --loglevel=warn || { tail -100 ~/.npm/_logs/*-debug-0.log; exit 1; }
       - name: Print patch locations
         working-directory: data-raw/flowmap-vendor
         run: |
