@@ -36,6 +36,8 @@ jobs:
           npm view @deck.gl/layers@9.4.0 version
 
   inspect-compiled:
+    permissions:
+      contents: write
     name: Inspect compiled upstream API for patch port
     runs-on: ubuntu-latest
     steps:
@@ -49,6 +51,26 @@ jobs:
           rm package-lock.json
           npm install --package-lock-only --ignore-scripts --loglevel=warn || { tail -100 ~/.npm/_logs/*-debug-0.log; exit 1; }
           npm ci --ignore-scripts --loglevel=warn || { tail -100 ~/.npm/_logs/*-debug-0.log; exit 1; }
+      - name: Build FlowmapGL 9.5 patched browser assets
+        shell: bash
+        run: |
+          data-raw/flowmap-vendor/build-flowmap.sh build
+          data-raw/flowmap-vendor/build-flowmap.sh check
+      - name: Commit reproducible vendor artifacts
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data-raw/flowmap-vendor/package-lock.json \
+            inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js \
+            inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-vendor-manifest.json \
+            LICENSE.note
+          git diff --cached --check
+          if ! git diff --cached --quiet; then
+            git commit -m 'build: regenerate FlowmapGL 9.5 vendor bundle and SBOM'
+            git push origin HEAD:chore/flowmap-gl-9.5.0-vendor
+          fi
       - name: Print patch locations
         working-directory: data-raw/flowmap-vendor
         run: |
