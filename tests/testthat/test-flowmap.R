@@ -215,6 +215,56 @@ test_that("flowmap click and node hover interactions work in a browser", {
     gpu_probe, auto_unbox = TRUE, null = "null"
   ))
 
+  # Temporary deeper probe: distinguish viewport/attribute errors from
+  # picking-pass filtering or GPU draw failures.
+  render_probe <- tryCatch(js_value(
+    "var m=document.querySelector('.html-widget').map,d=m._deckgl;
+     var p=m.project([-74.01,40.75]),v=d.getViewports()[0],
+     layers=d.layerManager?.getLayers()||[],picker=d.deckPicker;
+     var cir=layers.find(l=>l.id==='flows-circles');
+     var attrs=cir?.getAttributeManager?.()?.getAttributes?.()||{};
+     var a=cir?.props?.data?.attributes||{};
+     var arr=(v,n=12)=>v&&v.slice ? Array.from(v.slice(0,n)) : null;
+     var passResults=[],error=null,orig=picker?.pickLayersPass?.render;
+     var prePickable=picker?picker._getPickable(layers).map(l=>l.id):[];
+     if(orig)picker.pickLayersPass.render=function(opts){
+       var r=orig.call(this,opts);
+       passResults.push({
+         pass:opts.pass,layers:opts.layers?.map(l=>l.id),
+         stats:(r.stats||[]).map(x=>({
+           name:x.name,visibleCount:x.visibleCount,drawCount:x.drawCount,
+           totalCount:x.totalCount
+         }))
+       });
+       return r;
+     };
+     var hit=null;
+     try{hit=d.pickObject({x:p.x,y:p.y,radius:10});}
+     catch(e){error=String(e);}
+     finally{if(orig)picker.pickLayersPass.render=orig;}
+     return {
+       mapProjected:p,deckProjected:v.project([-74.01,40.75]),
+       vp:{longitude:v.longitude,latitude:v.latitude,zoom:v.zoom,pitch:v.pitch,bearing:v.bearing},
+       pickableLayerIds:prePickable,
+       circleProps:{id:cir?.id,parameters:cir?.props?.parameters},
+       circleAttributes:{
+         instancePositions:arr(attrs.instancePositions?.value,12),
+         inRadius:arr(attrs.instanceInRadius?.value,8),
+         outRadius:arr(attrs.instanceOutRadius?.value,8),
+         colors:arr(attrs.instanceColors?.value,16)
+       },
+       sourcePositions:arr(a.getPosition?.value,12),
+       sourceRadii:arr(a.getInRadius?.value,8),
+       renderPasses:passResults,
+       pickingFramebuffer:picker?.pickingFBO&&{
+         width:picker.pickingFBO.width,height:picker.pickingFBO.height
+       },
+       hit:hit&&{id:hit.layer?.id,index:hit.index},error
+     };"
+  ), error = function(e) list(error = conditionMessage(e)))
+  message("FLOWMAP_RENDER_DEBUG ", jsonlite::toJSON(
+    render_probe, auto_unbox = TRUE, null = "null"
+  ))
   click_location(-74.01)
   expect_true(wait_for(
     "var selected=document.querySelector('.html-widget').map._flowmapSelectedLocations.flows;
