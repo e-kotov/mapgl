@@ -53,3 +53,4 @@ jobs:
             git commit -m 'build: regenerate vendor with one luma.gl 9.4.2 dependency tree'
             git push origin HEAD:chore/flowmap-gl-9.5.0-vendor
           fi
+# one-shot trigger
