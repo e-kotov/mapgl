@@ -1,0 +1,68 @@
+name: Temporary FlowmapGL patch migration
+on:
+  push:
+    branches: [chore/flowmap-gl-9.5.0-vendor]
+permissions:
+  contents: write
+jobs:
+  migrate:
+    if: contains(github.event.head_commit.message, '[generate-flowmap-patch]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - name: Generate unified patch from published 9.5.0 ESM and verify bundle identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          original_bundle_sha="$(sha256sum inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js | awk '{print $1}')"
+          cd data-raw/flowmap-vendor
+          npm ci --silent
+          files=(
+            node_modules/@flowmap.gl/data/dist/FlowmapState.d.ts
+            node_modules/@flowmap.gl/data/dist/FlowmapSelectors.d.ts
+            node_modules/@flowmap.gl/data/dist/FlowmapSelectors.js
+            node_modules/@flowmap.gl/layers/dist/FlowmapLayer.d.ts
+            node_modules/@flowmap.gl/layers/dist/FlowmapLayer.js
+          )
+          originals="$(mktemp -d)"
+          trap 'rm -rf "$originals"' EXIT
+          for path in "${files[@]}"; do
+            mkdir -p "$originals/$(dirname "$path")"
+            cp "$path" "$originals/$path"
+          done
+          node scripts/patch-flowmap-temporal-scale-domain.mjs
+          mkdir -p patches
+          patchfile=patches/flowmap-temporal-scale-domain.patch
+          : > "$patchfile"
+          for path in "${files[@]}"; do
+            diff -u --label "a/$path" --label "b/$path" "$originals/$path" "$path" >> "$patchfile" || {
+              code=$?
+              if [[ "$code" -ne 1 ]]; then exit "$code"; fi
+            }
+          done
+          test -s "$patchfile"
+          echo "Generated $(wc -c < "$patchfile")-byte unified diff"
+          npm ci --silent
+          git -C ../.. apply --check --directory='data-raw/flowmap-vendor' "data-raw/flowmap-vendor/$patchfile"
+          cd ../..
+          data-raw/flowmap-vendor/build-flowmap.sh build
+          data-raw/flowmap-vendor/build-flowmap.sh check
+          rebuilt_sha="$(sha256sum inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js | awk '{print $1}')"
+          test "$rebuilt_sha" = "$original_bundle_sha" || {
+            echo "::error::Unified patch changed the generated browser bundle; aborting"
+            exit 1
+          }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data-raw/flowmap-vendor/patches/flowmap-temporal-scale-domain.patch \
+            inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js \
+            inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-vendor-manifest.json \
+            LICENSE.note
+          git diff --cached --check -- . ':!inst/htmlwidgets/lib/flowmap-gl/flowmap-gl-bundle.min.js'
+          if ! git diff --cached --quiet; then
+            git commit -m 'build: rebase 9.5 temporal scale patch as standard unified diff'
+            git push origin HEAD:chore/flowmap-gl-9.5.0-vendor
+          fi
