@@ -55,16 +55,16 @@ test_that("FlowmapGL time range proxy API can switch between one and many window
   opts <- map$x$flowmaps[[1]]$settings
   expect_length(opts$selectedTimeRanges, 2)
   expect_equal(opts$selectedTimeRanges[[2]], c("2026-11-16", "2026-11-17"))
-  expect_null(opts$selectedTimeRange)
+  expect_null(opts[["selectedTimeRange", exact = TRUE]])
 
   map <- set_flowmap_filter(map, "flows",
                             selected_time_range = as.Date(c("2026-11-10", "2026-11-12")))
   opts <- map$x$flowmaps[[1]]$settings
-  expect_null(opts$selectedTimeRanges)
+  expect_null(opts[["selectedTimeRanges", exact = TRUE]])
   expect_equal(opts$selectedTimeRange, as.Date(c("2026-11-10", "2026-11-12")))
   map <- set_flowmap_filter(map, "flows", selected_time_ranges = list())
   expect_length(map$x$flowmaps[[1]]$settings$selectedTimeRanges, 0)
-  expect_null(map$x$flowmaps[[1]]$settings$selectedTimeRange)
+  expect_null(map$x$flowmaps[[1]]$settings[["selectedTimeRange", exact = TRUE]])
 
   map <- set_flowmap_settings(map, "flows", "scale_lock", TRUE) |>
     set_flowmap_settings("flows", "location_label_column", "name")
