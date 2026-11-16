@@ -51,6 +51,11 @@ flowmap_color_schemes <- function() {
 #'   without throwing a warning. If `TRUE`, defaults to `"screen"` when `flow_dark_mode` is `TRUE`,
 #'   and `"multiply"` when `FALSE`. If `FALSE`, no blending is applied. Note: CSS blending requires
 #'   a standalone canvas overlay and is ignored when `before_id` or `slot` is specified.
+#' @param flow_blending_mode GPU flow-overlap rendering: `"normal"` retains
+#'   existing rendering, while `"non-accumulating"` prevents overlapping
+#'   flows from progressively darkening or brightening. On standalone overlays,
+#'   non-accumulating mode automatically uses neutral-color canvas clearing
+#'   and compatible CSS blending, independent of `flow_blend`.
 #' @param flow_fade_amount Controls how much lower-magnitude flows fade compared to higher ones. Range: 0-100.
 #' @param flow_highlight_color Color used for FlowmapGL's hover highlight.
 #'   When `flow_hover_to_spotlight = TRUE`, hovering spotlights locations and
@@ -58,7 +63,17 @@ flowmap_color_schemes <- function() {
 #' @param flow_locations_enabled Whether to show location circles.
 #' @param flow_location_totals_enabled Whether to show incoming/outgoing totals as concentric circles at each location.
 #' @param flow_location_labels_enabled Whether to show text labels at locations.
+#' @param flow_location_label_props Optional named list of serializable
+#'   FlowmapGL TextLayer overrides (camelCase), such as `getSize`,
+#'   `getColor`, `fontFamily`, `outlineWidth`, `background`,
+#'   `backgroundColor`, and `collisionEnabled`. Colors accept CSS colors
+#'   or 3/4-element RGB(A) byte arrays (0-255). Location names come from
+#'   `locations$name` (falling back to `id`). Arbitrary JavaScript
+#'   callbacks, including custom `getText` functions, are unsupported.
 #' @param flow_lines_rendering_mode Controls how flow lines are rendered: `"straight"`, `"animated-straight"`, or `"curved"`.
+#' @param flow_wrap_longitude If `TRUE`, flat-map flows crossing the
+#'   antimeridian take the shorter route. Defaults to `FALSE` to preserve
+#'   previous rendering; globe flows follow great circles regardless.
 #' @param flow_line_thickness_scale Multiplier for flow line thickness.
 #' @param flow_line_curviness Multiplier for flow line curviness (only used when `flow_lines_rendering_mode` is `"curved"`).
 #' @param flow_clustering_enabled Whether to cluster nearby locations when zoomed out.
@@ -156,12 +171,15 @@ add_flowmap <- function(
   flow_opacity = 1,
   flow_dark_mode = "auto",
   flow_blend = "auto",
+  flow_blending_mode = c("normal", "non-accumulating"),
   flow_fade_amount = 50,
   flow_highlight_color = "#ff9b29",
   flow_locations_enabled = TRUE,
   flow_location_totals_enabled = TRUE,
   flow_location_labels_enabled = FALSE,
+  flow_location_label_props = NULL,
   flow_lines_rendering_mode = c("straight", "animated-straight", "curved"),
+  flow_wrap_longitude = FALSE,
   flow_line_thickness_scale = 1,
   flow_line_curviness = 1,
   flow_clustering_enabled = TRUE,
@@ -198,6 +216,7 @@ add_flowmap <- function(
 
   visibility <- match.arg(visibility)
   flow_lines_rendering_mode <- match.arg(flow_lines_rendering_mode)
+  flow_blending_mode <- match.arg(flow_blending_mode)
   flow_temporal_scale_domain <- match.arg(flow_temporal_scale_domain)
   flow_endpoints_in_viewport_mode <- match.arg(flow_endpoints_in_viewport_mode)
   flow_location_filter_mode <- match.arg(flow_location_filter_mode)
@@ -256,6 +275,14 @@ add_flowmap <- function(
   )
 
   use_interleaved <- !is.null(before_id) || !is.null(slot)
+  if (
+    identical(flow_blending_mode, "non-accumulating") &&
+      !use_interleaved && !identical(flow_blend, "auto")
+  ) {
+    rlang::warn(
+      "`flow_blend` is overridden while standalone `flow_blending_mode = 'non-accumulating'` is active because the canvas requires compatible CSS blending."
+    )
+  }
 
   # Resolve blend mode if "auto"
   if (identical(flow_blend, "auto")) {
@@ -325,6 +352,10 @@ add_flowmap <- function(
   flowmap_validate_logical(
     flow_location_labels_enabled,
     "flow_location_labels_enabled"
+  )
+  flowmap_validate_logical(flow_wrap_longitude, "flow_wrap_longitude")
+  flow_location_label_props <- flowmap_normalize_location_label_props(
+    flow_location_label_props
   )
   flowmap_validate_logical(flow_clustering_enabled, "flow_clustering_enabled")
   flowmap_validate_logical(flow_clustering_auto, "flow_clustering_auto")
@@ -421,12 +452,15 @@ add_flowmap <- function(
       darkMode = flow_dark_mode,
       opacity = flow_opacity,
       flowBlend = flow_blend,
+      blendingMode = flow_blending_mode,
       fadeAmount = flow_fade_amount,
       highlightColor = flow_highlight_color,
       locationsEnabled = flow_locations_enabled,
       locationTotalsEnabled = flow_location_totals_enabled,
       locationLabelsEnabled = flow_location_labels_enabled,
+      locationLabelProps = flow_location_label_props,
       flowLinesRenderingMode = flow_lines_rendering_mode,
+      wrapLongitude = flow_wrap_longitude,
       flowLineThicknessScale = flow_line_thickness_scale,
       flowLineCurviness = flow_line_curviness,
       clusteringEnabled = flow_clustering_enabled,
@@ -997,7 +1031,7 @@ flowmap_dependencies <- function() {
     ),
     htmltools::htmlDependency(
       name = "flowmap-gl",
-      version = "9.4.0",
+      version = "9.5.0",
       src = c(
         file = system.file("htmlwidgets/lib/flowmap-gl", package = "mapgl")
       ),
@@ -1005,7 +1039,7 @@ flowmap_dependencies <- function() {
     ),
     htmltools::htmlDependency(
       name = "flowmap-plugin",
-      version = "1.0.1",
+      version = "1.0.2",
       src = c(file = system.file("htmlwidgets", package = "mapgl")),
       script = "flowmap.js",
       stylesheet = "flowmap.css"
