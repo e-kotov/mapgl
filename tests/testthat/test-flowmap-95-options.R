@@ -122,7 +122,8 @@ test_that("FlowmapGL standalone blending configures canvas clearing and supports
         getSize = 13, getColor = "#ff0000", collisionEnabled = TRUE
       ),
       flow_clustering_enabled = FALSE, tooltip = FALSE
-    )
+    ) |>
+    add_flowmap_legend("flows", placement = "bottom-left")
 
   dir <- tempfile("mapgl-flowmap-95-browser-")
   dir.create(dir)
@@ -193,7 +194,8 @@ test_that("FlowmapGL standalone blending configures canvas clearing and supports
        getColor:p.locationLabelProps.getColor,
        collision:p.locationLabelProps.collisionEnabled,
        css:m._deckCanvas.style.mixBlendMode,
-       effects:(m._deckgl.props.effects||[]).map(function(x){return x.id;})
+       effects:(m._deckgl.props.effects||[]).map(function(x){return x.id;}),
+       legends:(m._deckgl.props.widgets||[]).map(function(w){return w.id;})
      };"
   )
   expect_equal(initial$blendingMode, "non-accumulating")
@@ -203,6 +205,21 @@ test_that("FlowmapGL standalone blending configures canvas clearing and supports
   expect_true(initial$collision)
   expect_equal(initial$css, "darken")
   expect_true("flowmap-canvas-clear" %in% initial$effects)
+  expect_true("mapgl-flowmap-legend-flows" %in% initial$legends)
+
+  # The built-in legend lock button must change the canonical FlowmapLayer.
+  clicked <- js(
+    "var m=document.querySelector('.html-widget').map;
+     var w=(m._deckgl.props.widgets||[]).find(x=>x.id==='mapgl-flowmap-legend-flows');
+     if(!w)return false;
+     w.props.onToggleLock(true);
+     return m._flowmapsConfig[0].settings.scaleLock.enabled;"
+  )
+  expect_true(clicked)
+  expect_true(wait_for(
+    "var m=document.querySelector('.html-widget').map;
+     return !!m._mapglFlowmapLayers[0].props.scaleLock.enabled;"
+  ))
 
   js("var m=document.querySelector('.html-widget').map;
       return MapGLFlowmapPlugin.setSettings(m, 'flows', {blendingMode:'normal'});")
