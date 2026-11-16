@@ -692,7 +692,40 @@ window.MapGLFlowmapPlugin = (function () {
     }
   }
 
+  // Connect the upstream FlowmapLegendWidget to each flowmap's live scale state.
+  function flowmapLegendWidgets(map) {
+    if (!FlowmapGL.FlowmapLegendWidget) return [];
+    return (map._flowmapLegendsConfig || []).map(function (spec) {
+      const layer = (map._flowmapsConfig || []).find(function (c) { return c.id === spec.id; });
+      if (!layer || layer.visibility === "none") return null;
+      const opts = layer.settings || {};
+      const id = spec.id;
+      return new FlowmapGL.FlowmapLegendWidget({
+        id: "mapgl-flowmap-legend-" + id,
+        placement: spec.placement || "bottom-left",
+        viewId: opts.viewId || undefined,
+        sections: spec.sections || ["flowThickness", "locationCircles"],
+        showLockControl: spec.showLockControl !== false,
+        darkMode: Boolean(opts.darkMode),
+        scaleState: map._flowmapScaleStates && map._flowmapScaleStates[id],
+        style: {pointerEvents: "auto", margin: "12px", marginBottom: "44px"},
+        onToggleLock: function (locked) {
+          setSettings(map, id, {scaleLock: {enabled: locked}});
+        }
+      });
+    }).filter(Boolean);
+  }
+
+  function refreshFlowmapLegendWidgets(map) {
+    const overlay = map._mapglFlowmapOverlay || map._deckgl;
+    if (overlay && (map._flowmapLegendsConfig || []).length) {
+      overlay.setProps({widgets: flowmapLegendWidgets(map)});
+    }
+  }
+
   function ensureOverlay(map, interleaved, elId, settings) {
+    const globe = settings && settings.flowProjection === "globe";
+    const deckViews = globe ? new FlowmapGL.GlobeView({id: "maplibre"}) : undefined;
     if (typeof FlowmapGL === "undefined") {
       console.error("FlowmapGL is not loaded. Cannot add flowmap layers.");
       return null;
@@ -730,6 +763,7 @@ window.MapGLFlowmapPlugin = (function () {
       const overlay = new FlowmapGL.MapboxOverlay({
         interleaved: true,
         layers: [],
+        ...(deckViews ? {views: deckViews} : {})
       });
 
       map.addControl(overlay);
@@ -804,6 +838,7 @@ window.MapGLFlowmapPlugin = (function () {
 
       const deckInstance = new FlowmapGL.Deck({
         canvas: deckCanvas,
+        ...(deckViews ? {views: deckViews} : {}),
         controller: false, // map controls the camera
         _useDevicePixels: true,
         initialViewState: initialViewState,
@@ -1099,6 +1134,7 @@ window.MapGLFlowmapPlugin = (function () {
       dataComparator: flowmapDataComparator,
       beforeId: config.beforeId || undefined,
       slot: config.slot || undefined,
+      viewId: settings.viewId || undefined,
       pickable: isPickable,
       visible: config.visibility !== "none",
       opacity: settings.opacity == null ? 1 : settings.opacity,
@@ -1124,8 +1160,24 @@ window.MapGLFlowmapPlugin = (function () {
       temporalScaleDomain: settings.temporalScaleDomain || "selected",
       maxTopFlowsDisplayNum: settings.maxTopFlowsDisplayNum,
       flowEndpointsInViewportMode: settings.flowEndpointsInViewportMode,
-      scaleLock: settings._scaleLock,
+      scaleLock: settings._scaleLock || settings.scaleLock,
       onScaleChange: function (scaleState) {
+        if (config.id === canonicalId) {
+          if (!map._flowmapScaleStates) map._flowmapScaleStates = {};
+          if (!map._flowmapScaleStateKeys) map._flowmapScaleStateKeys = {};
+          const key = JSON.stringify(scaleState || null);
+          if (map._flowmapScaleStateKeys[canonicalId] !== key) {
+            map._flowmapScaleStateKeys[canonicalId] = key;
+            map._flowmapScaleStates[canonicalId] = scaleState;
+            if (!map._flowmapLegendRefreshPending) {
+              map._flowmapLegendRefreshPending = true;
+              requestAnimationFrame(function () {
+                map._flowmapLegendRefreshPending = false;
+                refreshFlowmapLegendWidgets(map);
+              });
+            }
+          }
+        }
         if (config.id === canonicalId && scaleState && scaleState.domains) {
           if (!map._flowmapScaleDomains) {
             map._flowmapScaleDomains = {};
@@ -1161,7 +1213,10 @@ window.MapGLFlowmapPlugin = (function () {
         return location.lon;
       },
       getLocationName: function (location) {
-        return location.name || location.id;
+        const value = settings.locationLabelColumn && location[settings.locationLabelColumn];
+        return value === null || value === undefined || value === ""
+          ? (location.name || location.id)
+          : String(value);
       },
       getFlowOriginId: function (flow) {
         return flow.origin;
@@ -1369,6 +1424,7 @@ window.MapGLFlowmapPlugin = (function () {
       map._flowmapHoverTimers = {};
     }
     map._flowmapsConfig = x.flowmaps;
+    map._flowmapLegendsConfig = x.flowmapLegends || [];
     map._flowmapHTMLWidgets = HTMLWidgets;
 
     // A set_style() wipes the basemap (and, in interleaved mode, the deck
@@ -1552,7 +1608,9 @@ window.MapGLFlowmapPlugin = (function () {
     map._mapglFlowmapLayers = layers;
     const overlay = map._mapglFlowmapOverlay || map._deckgl;
     if (overlay) {
-      overlay.setProps({ layers: layers });
+      overlay.setProps((map._flowmapLegendsConfig || []).length
+        ? {layers: layers, widgets: flowmapLegendWidgets(map)}
+        : {layers: layers});
     }
 
     // FlowmapBlue highlights the hovered location ID itself. Recreate
@@ -1757,6 +1815,11 @@ window.MapGLFlowmapPlugin = (function () {
           config.settings = {};
         }
         Object.assign(config.settings, filter);
+        if (Object.prototype.hasOwnProperty.call(filter, "selectedTimeRanges")) {
+          delete config.settings.selectedTimeRange;
+        } else if (Object.prototype.hasOwnProperty.call(filter, "selectedTimeRange")) {
+          delete config.settings.selectedTimeRanges;
+        }
 
         if (Object.prototype.hasOwnProperty.call(filter, "selectedLocations")) {
           config.settings.selectedLocations = normalizeLocationIds(filter.selectedLocations);
