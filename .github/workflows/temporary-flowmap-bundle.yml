@@ -30,3 +30,4 @@ jobs:
             git commit -m 'build: bundle FlowmapGL legend and experimental globe exports'
             git push origin HEAD:chore/flowmap-gl-9.5.0-vendor
           fi
+# one-time trigger
