@@ -128,7 +128,7 @@ const manifest = {
     path: 'LICENSE.note'
   },
   colorSchemes: {
-    source: 'FlowMapGL 9.4.0 vendored bundle',
+    source: 'FlowMapGL 9.5.0 vendored bundle',
     names: colorSchemes
   },
   directDependencies: directPackages,

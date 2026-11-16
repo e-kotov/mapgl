@@ -44,7 +44,16 @@ add_flowmap(
   flow_spotlight_mode = c("spotlight", "grayscale", "brighten"),
   visibility = c("visible", "none"),
   before_id = NULL,
-  slot = NULL
+  slot = NULL,
+  flow_blending_mode = c("normal", "non-accumulating"),
+  flow_location_label_props = NULL,
+  flow_wrap_longitude = FALSE,
+  flow_scale_lock = FALSE,
+  flow_scale_domains = NULL,
+  flow_selected_time_ranges = NULL,
+  flow_location_label_column = NULL,
+  flow_projection = c("map", "globe"),
+  flow_view_id = NULL
 )
 }
 \arguments{
@@ -88,6 +97,12 @@ without throwing a warning. If \code{TRUE}, defaults to \code{"screen"} when \co
 and \code{"multiply"} when \code{FALSE}. If \code{FALSE}, no blending is applied. Note: CSS blending requires
 a standalone canvas overlay and is ignored when \code{before_id} or \code{slot} is specified.}
 
+\item{flow_blending_mode}{GPU flow-overlap rendering: \code{"normal"} retains
+existing rendering, while \code{"non-accumulating"} prevents overlapping
+flows from progressively darkening or brightening. Standalone overlays
+automatically use neutral-color clearing and compatible CSS blending,
+independent of \code{flow_blend}.}
+
 \item{flow_fade_amount}{Controls how much lower-magnitude flows fade compared to higher ones. Range: 0-100.}
 
 \item{flow_highlight_color}{Color used for FlowmapGL's hover highlight.
@@ -100,7 +115,41 @@ clusters; hover highlights on flows are suppressed.}
 
 \item{flow_location_labels_enabled}{Whether to show text labels at locations.}
 
+\item{flow_location_label_props}{Optional named list of serializable
+FlowmapGL TextLayer overrides using camelCase keys, such as \code{getSize},
+\code{getColor}, \code{fontFamily}, \code{outlineWidth}, \code{background},
+\code{backgroundColor}, or \code{collisionEnabled}. Colors accept CSS colors
+or 3/4-element RGB(A) byte arrays (0-255). Text is taken from the
+\code{name} column of \code{locations}, falling back to \code{id}.
+JavaScript callbacks and custom \code{getText} functions are unsupported.}
+
 \item{flow_lines_rendering_mode}{Controls how flow lines are rendered: \code{"straight"}, \code{"animated-straight"}, or \code{"curved"}.}
+
+\item{flow_wrap_longitude}{When \code{TRUE}, flat-map flows that cross the
+antimeridian take the shorter route. Defaults to \code{FALSE} to preserve
+previous behavior. Globe flows follow great circles regardless.}
+
+\item{flow_scale_lock}{Whether to freeze flow and location-circle scale
+domains during interaction. Defaults to \code{FALSE}.}
+
+\item{flow_scale_domains}{Optional explicit locked domains, as a named
+list with \code{flowMagnitude} and/or \code{locationTotals} numeric
+two-element min/max vectors. Requires \code{flow_scale_lock = TRUE}.}
+
+\item{flow_selected_time_ranges}{Optional list of non-contiguous
+two-element time ranges. Requires \code{flow_time_column}; cannot be used
+together with \code{flow_selected_time_range}.}
+
+\item{flow_location_label_column}{Optional field name in \code{locations}
+used as the label text for individual locations.}
+
+\item{flow_projection}{Choose \code{"map"} for the existing flat-map
+FlowmapGL overlay, or experimental \code{"globe"} to draw flows using
+deck.gl GlobeView on a compatible globe basemap. Visual alignment should
+be verified before production use.}
+
+\item{flow_view_id}{Advanced optional deck.gl viewport ID. A nonexistent
+ID hides the layer. Normally leave as \code{NULL}.}
 
 \item{flow_line_thickness_scale}{Multiplier for flow line thickness.}
 

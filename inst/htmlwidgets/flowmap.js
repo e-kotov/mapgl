@@ -662,7 +662,82 @@ window.MapGLFlowmapPlugin = (function () {
     return [10, 10];
   }
 
+  // A standalone Deck canvas must use FlowmapGL's frame-level clear effect
+  // and its matching CSS compositing for non-accumulating GPU blending.
+  // The overlay canvas is shared: use the first visible flowmap's settings.
+  function applyStandaloneFlowmapCanvasSettings(map, settings) {
+    const canvas = map._deckCanvas;
+    if (!canvas) return;
+    const props = {
+      blendingMode: settings.blendingMode || "normal",
+      darkMode: Boolean(settings.darkMode)
+    };
+
+    if (props.blendingMode === "non-accumulating") {
+      canvas.style.mixBlendMode = FlowmapGL.getFlowmapCanvasStyle(props).mixBlendMode;
+    } else if (settings.flowBlend) {
+      canvas.style.mixBlendMode = typeof settings.flowBlend === "string"
+        ? settings.flowBlend
+        : (props.darkMode ? "screen" : "multiply");
+    } else {
+      canvas.style.mixBlendMode = "";
+    }
+
+    const key = props.blendingMode + ":" + props.darkMode;
+    if (map._deckgl && map._flowmapCanvasModeKey !== key) {
+      map._deckgl.setProps({
+        effects: FlowmapGL.getFlowmapCanvasEffects(props)
+      });
+      map._flowmapCanvasModeKey = key;
+    }
+  }
+
+  // Connect the upstream FlowmapLegendWidget to each flowmap's live scale state.
+  function flowmapLegendWidgets(map) {
+    if (!FlowmapGL.FlowmapLegendWidget) return [];
+    if (!map._flowmapLegendWidgetCache) map._flowmapLegendWidgetCache = {};
+    return (map._flowmapLegendsConfig || []).map(function (spec) {
+      const layer = (map._flowmapsConfig || []).find(function (c) { return c.id === spec.id; });
+      if (!layer || layer.visibility === "none") return null;
+      const opts = layer.settings || {};
+      const id = spec.id;
+      const props = {
+        id: "mapgl-flowmap-legend-" + id,
+        placement: spec.placement || "bottom-left",
+        viewId: opts.viewId || undefined,
+        sections: spec.sections || ["flowThickness", "locationCircles"],
+        showLockControl: spec.showLockControl !== false,
+        darkMode: Boolean(opts.darkMode),
+        scaleState: map._flowmapScaleStates && map._flowmapScaleStates[id],
+        style: {pointerEvents: "auto", margin: "12px", marginBottom: "44px"},
+        onToggleLock: function (locked) {
+          setSettings(map, id, {scaleLock: {enabled: locked}});
+        }
+      };
+      // Keep widget identity stable when flow layers redraw (e.g. during
+      // hover spotlight). Otherwise legend DOM and the focused lock button
+      // would be repeatedly unmounted.
+      let widget = map._flowmapLegendWidgetCache[id];
+      if (!widget) {
+        widget = new FlowmapGL.FlowmapLegendWidget(props);
+        map._flowmapLegendWidgetCache[id] = widget;
+      } else {
+        widget.setProps(props);
+      }
+      return widget;
+    }).filter(Boolean);
+  }
+
+  function refreshFlowmapLegendWidgets(map) {
+    const overlay = map._mapglFlowmapOverlay || map._deckgl;
+    if (overlay && (map._flowmapLegendsConfig || []).length) {
+      overlay.setProps({widgets: flowmapLegendWidgets(map)});
+    }
+  }
+
   function ensureOverlay(map, interleaved, elId, settings) {
+    const globe = settings && settings.flowProjection === "globe";
+    const deckViews = globe ? new FlowmapGL.GlobeView({id: "maplibre"}) : undefined;
     if (typeof FlowmapGL === "undefined") {
       console.error("FlowmapGL is not loaded. Cannot add flowmap layers.");
       return null;
@@ -700,11 +775,13 @@ window.MapGLFlowmapPlugin = (function () {
       const overlay = new FlowmapGL.MapboxOverlay({
         interleaved: true,
         layers: [],
+        ...(deckViews ? {views: deckViews} : {})
       });
 
       map.addControl(overlay);
       map._mapglFlowmapOverlay = overlay;
       map._mapglFlowmapOverlayInterleaved = true;
+      map._flowmapCanvasModeKey = null;
 
       map.once("remove", function () {
         map._mapglFlowmapOverlay = null;
@@ -720,21 +797,8 @@ window.MapGLFlowmapPlugin = (function () {
         map._deckgl &&
         map._mapglFlowmapOverlayInterleaved === false
       ) {
-        // Update blending styles on the existing canvas during widget updates
-        // NOTE: blend must go on the canvas, not the container, to avoid
-        // stacking-context isolation that prevents cross-element blending.
-        const deckCanvas = map._deckCanvas;
-        if (deckCanvas) {
-          if (settings && settings.flowBlend) {
-            if (typeof settings.flowBlend === "string") {
-              deckCanvas.style.mixBlendMode = settings.flowBlend;
-            } else {
-              deckCanvas.style.mixBlendMode = settings.darkMode ? "screen" : "multiply";
-            }
-          } else {
-            deckCanvas.style.mixBlendMode = "";
-          }
-        }
+        // Reconfigure CSS compositing and frame effects when a widget updates.
+        applyStandaloneFlowmapCanvasSettings(map, settings || {});
         return map._deckgl;
       }
 
@@ -786,6 +850,7 @@ window.MapGLFlowmapPlugin = (function () {
 
       const deckInstance = new FlowmapGL.Deck({
         canvas: deckCanvas,
+        ...(deckViews ? {views: deckViews} : {}),
         controller: false, // map controls the camera
         _useDevicePixels: true,
         initialViewState: initialViewState,
@@ -980,19 +1045,9 @@ window.MapGLFlowmapPlugin = (function () {
       map._deckgl = deckInstance;
       map._mapglFlowmapOverlayInterleaved = false;
 
-      // Apply CSS Blending directly to the canvas element.
-      // IMPORTANT: The container must NOT have a z-index (other than auto)
-      // because that creates a stacking context which isolates the canvas
-      // and prevents mix-blend-mode from blending with the underlying map.
-      if (settings && settings.flowBlend) {
-        if (typeof settings.flowBlend === "string") {
-          deckCanvas.style.mixBlendMode = settings.flowBlend;
-        } else {
-          deckCanvas.style.mixBlendMode = settings.darkMode ? "screen" : "multiply";
-        }
-      } else {
-        deckCanvas.style.mixBlendMode = "";
-      }
+      // Keep the canvas outside a z-index stacking context so CSS blending
+      // combines it with the underlying MapLibre/Mapbox basemap.
+      applyStandaloneFlowmapCanvasSettings(map, settings || {});
 
       map.once("remove", function () {
         if (map._deckgl) {
@@ -1091,9 +1146,11 @@ window.MapGLFlowmapPlugin = (function () {
       dataComparator: flowmapDataComparator,
       beforeId: config.beforeId || undefined,
       slot: config.slot || undefined,
+      viewId: settings.viewId || undefined,
       pickable: isPickable,
       visible: config.visibility !== "none",
       opacity: settings.opacity == null ? 1 : settings.opacity,
+      blendingMode: settings.blendingMode || "normal",
       colorScheme: settings.colorScheme,
       darkMode: settings.darkMode,
       fadeAmount: settings.fadeAmount,
@@ -1101,7 +1158,9 @@ window.MapGLFlowmapPlugin = (function () {
       locationsEnabled: settings.locationsEnabled,
       locationTotalsEnabled: settings.locationTotalsEnabled,
       locationLabelsEnabled: settings.locationLabelsEnabled,
+      locationLabelProps: settings.locationLabelProps || undefined,
       flowLinesRenderingMode: settings.flowLinesRenderingMode,
+      wrapLongitude: Boolean(settings.wrapLongitude),
       flowLineThicknessScale: settings.flowLineThicknessScale == null ? 1 : settings.flowLineThicknessScale,
       flowLineCurviness: settings.flowLineCurviness == null ? 1 : settings.flowLineCurviness,
       clusteringEnabled: settings.clusteringEnabled,
@@ -1113,8 +1172,24 @@ window.MapGLFlowmapPlugin = (function () {
       temporalScaleDomain: settings.temporalScaleDomain || "selected",
       maxTopFlowsDisplayNum: settings.maxTopFlowsDisplayNum,
       flowEndpointsInViewportMode: settings.flowEndpointsInViewportMode,
-      scaleLock: settings._scaleLock,
+      scaleLock: settings._scaleLock || settings.scaleLock,
       onScaleChange: function (scaleState) {
+        if (config.id === canonicalId) {
+          if (!map._flowmapScaleStates) map._flowmapScaleStates = {};
+          if (!map._flowmapScaleStateKeys) map._flowmapScaleStateKeys = {};
+          const key = JSON.stringify(scaleState || null);
+          if (map._flowmapScaleStateKeys[canonicalId] !== key) {
+            map._flowmapScaleStateKeys[canonicalId] = key;
+            map._flowmapScaleStates[canonicalId] = scaleState;
+            if (!map._flowmapLegendRefreshPending) {
+              map._flowmapLegendRefreshPending = true;
+              requestAnimationFrame(function () {
+                map._flowmapLegendRefreshPending = false;
+                refreshFlowmapLegendWidgets(map);
+              });
+            }
+          }
+        }
         if (config.id === canonicalId && scaleState && scaleState.domains) {
           if (!map._flowmapScaleDomains) {
             map._flowmapScaleDomains = {};
@@ -1150,7 +1225,10 @@ window.MapGLFlowmapPlugin = (function () {
         return location.lon;
       },
       getLocationName: function (location) {
-        return location.name || location.id;
+        const value = settings.locationLabelColumn && location[settings.locationLabelColumn];
+        return value === null || value === undefined || value === ""
+          ? (location.name || location.id)
+          : String(value);
       },
       getFlowOriginId: function (flow) {
         return flow.origin;
@@ -1284,7 +1362,7 @@ window.MapGLFlowmapPlugin = (function () {
     const sourceLayer = (map._mapglFlowmapLayers || []).find(function (layer) {
       return layer._mapglCanonicalId === flowmapId && layer.state;
     });
-    // FlowmapGL 9.4.0 does not expose these provider/cluster accessors as a
+    // FlowmapGL 9.5.0 does not expose these provider/cluster accessors as a
     // public FlowmapLayer API. Keep this compatibility boundary in one place:
     // the spotlight overlay needs the canonical layer's cluster membership
     // and flow ID accessors.
@@ -1358,6 +1436,7 @@ window.MapGLFlowmapPlugin = (function () {
       map._flowmapHoverTimers = {};
     }
     map._flowmapsConfig = x.flowmaps;
+    map._flowmapLegendsConfig = x.flowmapLegends || [];
     map._flowmapHTMLWidgets = HTMLWidgets;
 
     // A set_style() wipes the basemap (and, in interleaved mode, the deck
@@ -1414,6 +1493,13 @@ window.MapGLFlowmapPlugin = (function () {
 
   function redrawFlowmaps(map, HTMLWidgets) {
     if (!map._flowmapsConfig) return;
+    if (map._deckgl && map._mapglFlowmapOverlayInterleaved === false) {
+      const firstVisible = map._flowmapsConfig.find(function (config) {
+        return config.visibility !== "none";
+      });
+      const canvasConfig = firstVisible || map._flowmapsConfig[0];
+      applyStandaloneFlowmapCanvasSettings(map, (canvasConfig && canvasConfig.settings) || {});
+    }
     const HTMLWidgetsInstance = HTMLWidgets || map._flowmapHTMLWidgets;
     const layers = [];
 
@@ -1534,7 +1620,9 @@ window.MapGLFlowmapPlugin = (function () {
     map._mapglFlowmapLayers = layers;
     const overlay = map._mapglFlowmapOverlay || map._deckgl;
     if (overlay) {
-      overlay.setProps({ layers: layers });
+      overlay.setProps((map._flowmapLegendsConfig || []).length
+        ? {layers: layers, widgets: flowmapLegendWidgets(map)}
+        : {layers: layers});
     }
 
     // FlowmapBlue highlights the hovered location ID itself. Recreate
@@ -1565,7 +1653,7 @@ window.MapGLFlowmapPlugin = (function () {
             !contextLayer || !contextLayer.state || typeof contextLayer.setState !== "function") {
           return;
         }
-        // FlowmapGL 9.4.0's location-ring state uses this internal shape.
+        // FlowmapGL 9.5.0's location-ring state uses this internal shape.
         contextLayer.setState({
           highlightedObject: {
             type: "location",
@@ -1739,6 +1827,11 @@ window.MapGLFlowmapPlugin = (function () {
           config.settings = {};
         }
         Object.assign(config.settings, filter);
+        if (Object.prototype.hasOwnProperty.call(filter, "selectedTimeRanges")) {
+          delete config.settings.selectedTimeRange;
+        } else if (Object.prototype.hasOwnProperty.call(filter, "selectedTimeRange")) {
+          delete config.settings.selectedTimeRanges;
+        }
 
         if (Object.prototype.hasOwnProperty.call(filter, "selectedLocations")) {
           config.settings.selectedLocations = normalizeLocationIds(filter.selectedLocations);

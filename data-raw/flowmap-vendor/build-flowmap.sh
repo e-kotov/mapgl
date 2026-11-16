@@ -34,7 +34,8 @@ build_outputs() {
 
   cd "$VENDOR_DIR"
   npm ci --silent
-  apply_patches
+  git -C "$ROOT_DIR" apply --check --directory="data-raw/flowmap-vendor" "$VENDOR_DIR/patches/flowmap-temporal-scale-domain.patch"
+  git -C "$ROOT_DIR" apply --directory="data-raw/flowmap-vendor" "$VENDOR_DIR/patches/flowmap-temporal-scale-domain.patch"
 
   mkdir -p "$output_dir"
   npx esbuild entry.js \
@@ -44,25 +45,6 @@ build_outputs() {
     --minify
 
   node scripts/generate-vendor-metadata.mjs "$output_dir" "$license_note_path"
-}
-
-apply_patches() {
-  local patches=()
-  shopt -s nullglob
-  patches=("$VENDOR_DIR"/patches/*.patch)
-  shopt -u nullglob
-
-  if ((${#patches[@]} == 0)); then
-    return 0
-  fi
-
-  for patch in "${patches[@]}"; do
-    git -C "$ROOT_DIR" apply --check --directory="data-raw/flowmap-vendor" "$patch"
-  done
-
-  for patch in "${patches[@]}"; do
-    git -C "$ROOT_DIR" apply --directory="data-raw/flowmap-vendor" "$patch"
-  done
 }
 
 case "$COMMAND" in

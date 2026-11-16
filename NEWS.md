@@ -1,12 +1,17 @@
 # mapgl (development version)
 
+* Experimental FlowmapGL controls: `flow_scale_lock`, optional fixed `flow_scale_domains`, disjoint `flow_selected_time_ranges`, `flow_location_label_column`, `flow_projection = "globe"`, and `flow_view_id`. The new `add_flowmap_legend()` shows live flow/circle scales and an optional scale-lock button. These are opt-in; verify experimental globe basemap alignment before production use. `set_flowmap_filter()` now accepts `selected_time_ranges` to update non-contiguous intervals in Shiny.
+
+
 * `add_source()` accepts a relative path to a GeoJSON file, such as `"data/lines.geojson"`, as well as a URL. The browser resolves the path against the page, so the file must be served alongside the saved HTML.
 
 * Flowmaps now support click-to-filter and delayed, node-only hover spotlighting by default. `flow_click_to_filter` and `flow_hover_to_spotlight` can disable the interactions; `flow_spotlight_mode` selects the spotlight appearance. The same controls can be changed with `set_flowmap_settings()` using `clickToFilter`, `hoverToSpotlight`, and `spotlightMode`. Clicking a selected location clears it without changing the configured `flow_location_filter_mode`.
 
 * Flowmap time-range and location-filter updates now reuse the cached data provider instead of rebuilding it. Click-to-filter also respects `flow_location_filter_mode`, and a single selected location is passed to FlowmapGL as a one-element array.
 
-* Update the bundled FlowmapGL runtime to 9.4.0. Existing `flow_temporal_scale_domain` support continues to choose selected-time or all-time scale domains. The vendor build cleans generated debug bundles and source maps from `inst/`.
+* Upgrade the bundled FlowmapGL runtime to 9.5.0, deck.gl 9.4.1, and a **single shared luma.gl 9.4.2 dependency tree**. This avoids the previous duplicate luma.gl 9.4.0/9.4.2 installations that broke GPU picking. Preserve the custom `flow_temporal_scale_domain` extension via a rebased standard patch. The bundle also includes upstream rendering, clustering, picking, antimeridian and location-label fixes. The reproducible build and R/browser checks cover the upgrade.
+
+* `add_flowmap()` adds `flow_wrap_longitude` to opt into shortest antimeridian routes, `flow_blending_mode` for GPU `"non-accumulating"` flow rendering, and `flow_location_label_props` for validated TextLayer styling (font, color, outline, background and collision filtering). Standalone overlays automatically set the matching canvas clear effect and CSS blend for the GPU mode. `set_flowmap_settings()` accepts the corresponding dynamic settings `wrapLongitude`, `blendingMode`, and `locationLabelProps`. Defaults remain unchanged; custom JavaScript label callbacks are not supported.
 
 * Interactive categorical legends can isolate a category: press and hold a legend item to show that category alone, and hold it again to show every category. A plain click still toggles one category. `only_button = TRUE` adds an "only" button on hover that does the same.
 

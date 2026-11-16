@@ -347,7 +347,7 @@ test_that("add_flowmap validates tooltip content and style", {
   )
 })
 
-test_that("flowmap_color_schemes returns FlowMapGL 9.4.0 presets", {
+test_that("flowmap_color_schemes returns FlowMapGL 9.5.0 presets", {
   expected <- c(
     "Blues",
     "BluGrn",
