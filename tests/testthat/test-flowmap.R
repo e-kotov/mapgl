@@ -188,7 +188,9 @@ test_that("flowmap click and node hover interactions work in a browser", {
      var p=m.project([-74.01,40.75]),rect=m.getContainer().getBoundingClientRect();
      var c=m._deckCanvas,gl=c&&(c.getContext('webgl2')||c.getContext('webgl'));
      var pick=d.pickObject({x:p.x,y:p.y,radius:10});
-     var near=d.pickMultipleObjects&&d.pickMultipleObjects({x:p.x,y:p.y,radius:20,depth:5});
+     var near=[],pickingError=null;
+     try {if (d.pickMultipleObjects) near=d.pickMultipleObjects({x:p.x,y:p.y,radius:20,depth:5});}
+     catch(err) {pickingError=String(err);}
      var layers=m._mapglFlowmapLayers.map(function(l){return {
        id:l.id,visible:l.props.visible,pickable:l.props.pickable,
        hasState:!!l.state,hasLayersData:!!l.state?.layersData,
@@ -207,6 +209,7 @@ test_that("flowmap click and node hover interactions work in a browser", {
          layers:(d.props.layers||[]).map(l=>l.id)},
        hit:pick&&{id:pick.layer?.id,source:pick.sourceLayer?.id,index:pick.index},
        near:near&&near.map(x=>({id:x.layer?.id,source:x.sourceLayer?.id,index:x.index})),
+       pickingError:pickingError,
        layers:layers
      };"
   )
